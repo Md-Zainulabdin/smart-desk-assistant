@@ -1,0 +1,27 @@
+# deps
+node_modules/
+
+# env / secrets - never commit per CONTEXT.md
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# next.js
+.next/
+out/
+
+# build output
+dist/
+build/
+
+# python / fastapi
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# esp32 / platformio
+.platformio/
+firmware/esp32/build/

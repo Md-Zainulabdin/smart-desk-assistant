@@ -1,0 +1,13 @@
+{
+  "name": "smart-desk-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/mobile",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:mobile": "npm run dev -w apps/mobile",
+    "build:mobile": "npm run build -w apps/mobile"
+  }
+}
