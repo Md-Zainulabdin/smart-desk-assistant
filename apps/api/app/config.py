@@ -8,7 +8,6 @@ class Settings(BaseSettings):
 
     ENV: str = "dev"
     DATABASE_URL: str = ""
-    GROQ_API_KEY: str = ""
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REFRESH_TOKEN: str = ""
