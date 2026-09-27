@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class ContextState(str, Enum):
     AVAILABLE = "AVAILABLE"
     IN_MEETING = "IN_MEETING"
