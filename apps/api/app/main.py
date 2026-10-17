@@ -7,7 +7,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.db import pool, run_migrations
-from app.routers.google_auth import router as google_auth_router
+from app.routers.calendar import router as calendar_router
+from app.routers.google_auth import router as google_auth_route
 from app.routers.health import router as health_router
 
 
@@ -40,7 +41,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health_router)
-    app.include_router(google_auth_router)
+    app.include_router(google_auth_route)
+    app.include_router(calendar_router)
     return app
 
 

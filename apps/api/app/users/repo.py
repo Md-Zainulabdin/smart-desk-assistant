@@ -1,5 +1,7 @@
 import psycopg
+
 from app.users.model import User
+
 
 def save_google_user(
     conn,
