@@ -29,14 +29,14 @@ The system supports voice commands, notes, checklists, reminders, Google Calenda
 ## Core Constraints
 
 - The project supports one primary user and one paired phone per device.
-- ESP32 handles sensors, display, Bluetooth, Wi-Fi, audio capture/playback, and communication only.
-- Speech-to-text, AI/NLP, calendar integration, reminders, and context decisions run on the FastAPI backend.
+- ESP32 handles sensors, display, Bluetooth, Wi-Fi, audio capture/playback, speech-to-text, and communication only.
+- The backend receives text commands only; AI/NLP, calendar integration, reminders, and context decisions run on the FastAPI backend.
 - Google Calendar is the only supported calendar provider.
 - Notes and checklists are stored in Neon PostgreSQL.
-- Internet is required for AI, speech processing, Google Calendar, and news features.
+- Internet is required for AI, cloud speech-to-text, Google Calendar, and news features.
 - Radar detects room presence; Bluetooth is used as a supporting signal for the paired user’s proximity.
 - A calendar event means “calendar indicates a meeting”; it does not prove the user is physically attending one.
 - Context decisions must remain explainable and use these states only: `AVAILABLE`, `IN_MEETING`, `AWAY`, and `PRESENT_UNKNOWN`.
 - Notification decisions must use only these modes: `SPEAK_AND_SHOW`, `SHOW_SILENTLY`, `DELAY`, and `MOBILE_ONLY`.
 - Do not add camera tracking, emotion detection, multi-user support, or complex machine-learning behavior in the first release.
-- Audio must be sent to the backend only after wake-word or manual activation, and the device must visibly indicate when it is listening.
+- Audio is captured only after wake-word or manual activation, and the device must visibly indicate when it is listening. Only the resulting text command is sent to the backend.

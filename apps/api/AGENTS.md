@@ -9,8 +9,8 @@ Smart Desk Assistant is a voice-activated IoT assistant connected to an ESP32 de
 Core system flow:
 
 1. The ESP32 detects a wake word and records a voice command.
-2. The device sends audio to the FastAPI backend.
-3. Speech-to-text converts audio into text.
+2. The device transcribes the audio to text on-device.
+3. The device sends the text command to the FastAPI backend.
 4. Intent parsing identifies the requested action.
 5. The backend validates the command and performs the action.
 6. The result is stored in Neon PostgreSQL.
@@ -27,7 +27,7 @@ The backend is the source of truth for users, notes, reminders, calendar events,
 - Neon PostgreSQL
 - SQLAlchemy / Alembic for database access and migrations
 - Google Calendar API with OAuth 2.0
-- Speech-to-text provider
+- Speech-to-text on the ESP32 device (the backend receives text commands)
 - AI/NLP provider for intent parsing and briefings
 - Redis and worker/scheduler only when background processing is needed
 
@@ -85,8 +85,7 @@ Receive request
 For voice commands:
 
 ```text
-Audio received
-→ Speech-to-text
+Text command received
 → Intent parsing
 → Validate required information
 → Ask for clarification if needed
@@ -117,7 +116,6 @@ Never create duplicate calendar events, notes, or reminders when a device retrie
 - If user identity is uncertain, use silent display or delay instead of voice output.
 - If the ESP32 is offline, store the notification and send it when the device reconnects.
 - Do not mark a notification as delivered until delivery is confirmed or recorded.
-- Temporary audio should be deleted after processing unless explicit storage is enabled.
 
 ## Folder Structure
 
@@ -164,9 +162,10 @@ apps/api/
 │   │   │   ├── repository.py
 │   │   │   └── schemas.py
 │   │   │
-│   │   ├── voice/
+│   │   ├── command/
 │   │   │   ├── router.py
 │   │   │   ├── service.py
+│   │   │   ├── intent.py
 │   │   │   └── schemas.py
 │   │   │
 │   │   ├── context/
@@ -188,22 +187,20 @@ apps/api/
 │   │
 │   ├── integrations/
 │   │   ├── google_calendar.py     # Google Calendar API client
-│   │   ├── speech_to_text.py      # Speech-to-text provider client
 │   │   ├── text_to_speech.py      # Text-to-speech provider client
 │   │   └── ai_provider.py         # AI/NLP provider client
 │   │
 │   └── jobs/
 │       ├── reminder_worker.py     # Due reminder processing
 │       ├── calendar_sync.py       # Calendar synchronization
-│       ├── context_worker.py      # Context evaluation
-│       └── cleanup_worker.py      # Temporary audio cleanup
+│       └── context_worker.py      # Context evaluation
 │
 ├── tests/
 │   ├── auth/
 │   ├── notes/
 │   ├── reminders/
 │   ├── calendar/
-│   ├── voice/
+│   ├── command/
 │   ├── context/
 │   ├── notifications/
 │   └── device/
@@ -219,6 +216,7 @@ apps/api/
 
 - `router.py` — API endpoints only.
 - `service.py` — Business logic and workflow handling.
+- `intent.py` — Rule-based intent parsing for text commands (in the `command` module).
 - `repository.py` — Database reads and writes only.
 - `schemas.py` — Pydantic request and response models.
 - `integrations/` — External API clients only.
@@ -233,7 +231,7 @@ Build these features first:
 - Notes and checklist items.
 - Time-based reminders with snooze and dismiss.
 - Google Calendar event creation and upcoming-event reading.
-- Audio upload, speech-to-text, and simple intent parsing.
+- Text command intake (from the device) and simple intent parsing.
 - Context-aware reminder decisions using radar status, Bluetooth status, Calendar state, and manual preferences.
 - ESP32 device status, heartbeat, and notification polling.
 - PWA APIs for notes, reminders, settings, and current context.
