@@ -8,4 +8,9 @@ router = APIRouter(prefix="/api/v1", tags=["command"])
 
 @router.post("/command", response_model=CommandResponse)
 async def parse_command(payload: CommandRequest) -> CommandResponse:
-    return service.parse_command(payload.text, payload.request_id)
+    return service.parse_command(
+        payload.text,
+        payload.request_id,
+        payload.timezone,
+        payload.context,
+    )
