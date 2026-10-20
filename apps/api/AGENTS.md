@@ -4,18 +4,20 @@ You are an expert FastAPI and Python backend engineer helping build **Smart Desk
 
 ## Project Overview
 
-Smart Desk Assistant is a voice-activated IoT assistant connected to an ESP32 device and a Next.js PWA. It helps users create notes, checklists, reminders, and Google Calendar events using voice commands.
+Smart Desk Assistant is a voice-activated IoT assistant connected to an ESP32 device and a Next.js PWA. It helps users create notes, reminders, and Google Calendar events using voice commands.
 
 Core system flow:
 
 1. The ESP32 detects a wake word and records a voice command.
-2. The device sends audio to the FastAPI backend.
-3. Speech-to-text converts audio into text.
-4. Intent parsing identifies the requested action.
-5. The backend validates the command and performs the action.
-6. The result is stored in Neon PostgreSQL.
-7. The backend sends a response to the ESP32 and PWA.
-8. The context layer decides whether reminders should be spoken, shown silently, delayed, or sent to the mobile app.
+2. The device transcribes the audio to text on-device.
+3. The device sends the text command to the FastAPI backend.
+4. Intent parsing turns the text into a structured result: intent, details, and any missing information.
+5. When information is missing, the backend asks a clarification question and keeps the pending command.
+6. The user's follow-up reply is merged into the pending command to complete its details.
+7. When the parser status is `ready`, the backend performs the action.
+8. The result is stored in Neon PostgreSQL.
+9. The backend sends a response to the ESP32 and PWA.
+10. The context layer decides whether reminders should be spoken, shown silently, delayed, or sent to the mobile app.
 
 The backend is the source of truth for users, notes, reminders, calendar events, context states, notifications, command history, and device data.
 
@@ -27,8 +29,8 @@ The backend is the source of truth for users, notes, reminders, calendar events,
 - Neon PostgreSQL
 - SQLAlchemy / Alembic for database access and migrations
 - Google Calendar API with OAuth 2.0
-- Speech-to-text provider
-- AI/NLP provider for intent parsing and briefings
+- Speech-to-text on the ESP32 device (the backend receives text commands)
+- Rule-based command parser for intent parsing (no AI/LLM for parsing in the first version)
 - Redis and worker/scheduler only when background processing is needed
 
 ## Core Rules
@@ -47,6 +49,20 @@ The backend is the source of truth for users, notes, reminders, calendar events,
 - Add tests for important business rules and failure cases.
 - Prefer simple rule-based context logic in the first version.
 - Do not add camera tracking, emotion detection, multi-user device support, or complex machine learning in the first version.
+
+## Command Parser
+
+`POST /api/v1/command` turns one user sentence into a structured instruction. It is rule-based; do not replace it with an LLM in the first version.
+
+- Intents: `CREATE_NOTE`, `CREATE_REMINDER`, `CREATE_EVENT`, `READ_EVENTS`, `WEB_SEARCH`, `UNKNOWN`.
+- Statuses: `ready` (the orchestrator may execute), `needs_clarification` (send `clarification` to the user), `unsupported` (out of scope).
+- A response is never `ready` while any required field is missing.
+- Datetime slots are RFC 3339 strings with timezone offset; events default to 60 minutes when only a start time is given.
+- The parser is stateless. The orchestrator stores `{intent, slots, missing}` after every response and sends it back as `context` with the user's follow-up reply.
+- Checklist commands and destructive actions (cancel, delete, snooze) are out of scope and return `unsupported`.
+- Multi-part sentences return `needs_clarification` with `missing: ["single_command"]`; ask for one command at a time.
+- Orchestration duties stay outside the parser: authorization, confirmation, execution, and storage.
+- Files: `intent.py` classifies, `extract.py` pulls dates, times, titles, tasks, and queries, `clarify.py` detects missing information, `service.py` builds slots and merges context.
 
 ## Context States
 
@@ -85,14 +101,13 @@ Receive request
 For voice commands:
 
 ```text
-Audio received
-→ Speech-to-text
-→ Intent parsing
-→ Validate required information
-→ Ask for clarification if needed
-→ Execute action
+Text command received
+→ Command parsing (intent, details, missing fields)
+→ Ask the user for clarification if needed
+→ Store the pending command and merge the follow-up reply into it
+→ Execute only when the status is ready
 → Save result
-→ Send confirmation
+→ Send structured confirmation
 ```
 
 For reminders:
@@ -117,7 +132,6 @@ Never create duplicate calendar events, notes, or reminders when a device retrie
 - If user identity is uncertain, use silent display or delay instead of voice output.
 - If the ESP32 is offline, store the notification and send it when the device reconnects.
 - Do not mark a notification as delivered until delivery is confirmed or recorded.
-- Temporary audio should be deleted after processing unless explicit storage is enabled.
 
 ## Folder Structure
 
@@ -164,9 +178,12 @@ apps/api/
 │   │   │   ├── repository.py
 │   │   │   └── schemas.py
 │   │   │
-│   │   ├── voice/
+│   │   ├── command/
 │   │   │   ├── router.py
 │   │   │   ├── service.py
+│   │   │   ├── intent.py         # Intent classification rules
+│   │   │   ├── extract.py        # Dates, times, titles, tasks, queries
+│   │   │   ├── clarify.py        # Missing information and questions
 │   │   │   └── schemas.py
 │   │   │
 │   │   ├── context/
@@ -188,22 +205,20 @@ apps/api/
 │   │
 │   ├── integrations/
 │   │   ├── google_calendar.py     # Google Calendar API client
-│   │   ├── speech_to_text.py      # Speech-to-text provider client
 │   │   ├── text_to_speech.py      # Text-to-speech provider client
 │   │   └── ai_provider.py         # AI/NLP provider client
 │   │
 │   └── jobs/
 │       ├── reminder_worker.py     # Due reminder processing
 │       ├── calendar_sync.py       # Calendar synchronization
-│       ├── context_worker.py      # Context evaluation
-│       └── cleanup_worker.py      # Temporary audio cleanup
+│       └── context_worker.py      # Context evaluation
 │
 ├── tests/
 │   ├── auth/
 │   ├── notes/
 │   ├── reminders/
 │   ├── calendar/
-│   ├── voice/
+│   ├── command/
 │   ├── context/
 │   ├── notifications/
 │   └── device/
@@ -219,6 +234,9 @@ apps/api/
 
 - `router.py` — API endpoints only.
 - `service.py` — Business logic and workflow handling.
+- `intent.py` — Intent classification rules (in the `command` module).
+- `extract.py` — Date, time, and entity extraction from command text (in the `command` module).
+- `clarify.py` — Missing information detection and clarification questions (in the `command` module).
 - `repository.py` — Database reads and writes only.
 - `schemas.py` — Pydantic request and response models.
 - `integrations/` — External API clients only.
@@ -230,10 +248,10 @@ apps/api/
 Build these features first:
 
 - Authentication and device ownership.
-- Notes and checklist items.
+- Notes.
 - Time-based reminders with snooze and dismiss.
 - Google Calendar event creation and upcoming-event reading.
-- Audio upload, speech-to-text, and simple intent parsing.
+- Command parser with clarification loop and follow-up context (`POST /api/v1/command`).
 - Context-aware reminder decisions using radar status, Bluetooth status, Calendar state, and manual preferences.
 - ESP32 device status, heartbeat, and notification polling.
 - PWA APIs for notes, reminders, settings, and current context.
