@@ -1,0 +1,14 @@
+## ESP-IDF Component Manager dependencies (downloaded on first build)
+dependencies:
+  idf: ">=5.1"
+
+  # Slint UI toolkit (prebuilt, no Rust). Exact pin: slint_build.py downloads the matching compiler.
+  slint/slint: "==1.18.1"
+
+  # Wake word "Jarvis" + audio front end (AFE, VAD, noise suppression)
+  espressif/esp-sr: "^2.0.0"
+
+  # LovyanGFX display driver
+  lovyan03/lovyangfx:
+    git: https://github.com/lovyan03/LovyanGFX.git
+    version: "1.2.33"
