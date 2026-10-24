@@ -16,9 +16,9 @@ export interface CommandContext {
 
 export interface CommandRequest {
   text: string;
-  request_id?: string;
-  timezone?: string;
-  context?: CommandContext;
+  request_id?: string | null;
+  timezone?: string | null;
+  context?: CommandContext | null;
 }
 
 export interface CommandResponse {
