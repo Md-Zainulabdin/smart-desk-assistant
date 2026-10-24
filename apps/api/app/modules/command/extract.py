@@ -178,6 +178,19 @@ _CONNECTORS = {"for", "from", "to", "at", "on", "in", "by", "about", "and", "ple
 _ARTICLES = {"the", "a", "an"}
 _FILLERS = {"it", "that", "this", "them", "these", "those"}
 
+# Leading discourse markers carry no instruction. They are dropped before
+# parsing so "no, make it 3 pm" is read as a correction, while the response
+# still echoes the user's real sentence.
+_DISCOURSE_LEAD = re.compile(
+    r"^(?:(?:no|nope|nah|actually|wait|sorry|hmm|hey|well|ok|okay|and|but|also)[\s,]+)+",
+    re.IGNORECASE,
+)
+
+
+def strip_discourse(text: str) -> str:
+    stripped = _DISCOURSE_LEAD.sub("", text.strip()).strip()
+    return stripped or text.strip()
+
 _TIME_NOISE = (
     RELATIVE_PATTERN,
     RANGE_PATTERN,

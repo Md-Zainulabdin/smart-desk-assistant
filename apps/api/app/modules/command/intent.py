@@ -123,6 +123,23 @@ def is_out_of_scope(text: str) -> bool:
     return _has_any(text.lower(), OUT_OF_SCOPE_VERBS)
 
 
+def has_intent_lead(text: str, intent: Intent) -> bool:
+    """True when the sentence opens with a create verb for this intent.
+
+    A follow-up fragment such as "no, make it 3 pm" has no lead of its own, so it
+    must not rename the title or the task it is completing. The lead must match
+    the pending intent: "make" is an event lead, never a reminder task.
+    """
+    stripped = text.strip()
+    if intent is Intent.CREATE_EVENT:
+        return bool(LEAD_EVENT.match(stripped))
+    if intent is Intent.CREATE_REMINDER:
+        return bool(LEAD_REMINDER.match(stripped))
+    if intent is Intent.CREATE_NOTE:
+        return bool(LEAD_NOTE.match(stripped))
+    return False
+
+
 def _is_read(text: str, has_calendar_noun: bool) -> bool:
     if "do i have" in text or AVAILABILITY_PATTERN.search(text):
         return True

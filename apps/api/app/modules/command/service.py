@@ -162,9 +162,11 @@ def parse_command(
     context: CommandContext | None = None,
 ) -> CommandResponse:
     """Validate command text and turn it into a structured instruction."""
-    cleaned = text.strip()
-    if not cleaned:
+    original = text.strip()
+    if not original:
         raise ApiError("empty command", "invalid_command", 400)
+
+    cleaned = extract.strip_discourse(original)
 
     tz = _timezone(timezone)
     now = datetime.now(tz)
@@ -173,7 +175,7 @@ def parse_command(
     multi = intent_module.classify_all(cleaned)
     if len(multi) > 1:
         return CommandResponse(
-            text=cleaned,
+            text=original,
             intent=multi[0],
             status=Status.NEEDS_CLARIFICATION,
             slots={"detected_intents": ", ".join(item.value for item in multi)},
@@ -194,6 +196,10 @@ def parse_command(
         final_intent = detected
 
     parts = extract.extract(cleaned, now)
+    if base and not intent_module.has_intent_lead(cleaned, final_intent):
+        # A follow-up fragment completes values, it does not rename them.
+        parts.title = ""
+        parts.task = ""
     slots = _build_slots(final_intent, parts, tz, now, base)
 
     missing = clarify.missing_slots(final_intent, slots)
@@ -203,7 +209,7 @@ def parse_command(
         status = Status.NEEDS_CLARIFICATION if missing else Status.READY
 
     return CommandResponse(
-        text=cleaned,
+        text=original,
         intent=final_intent,
         status=status,
         slots=slots,

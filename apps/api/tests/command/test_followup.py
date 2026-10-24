@@ -118,3 +118,33 @@ def test_snooze_with_context_stays_unsupported():
     second = post_command("snooze it for ten minutes", context).json()
     assert second["intent"] == "UNKNOWN"
     assert second["status"] == "unsupported"
+
+
+def test_correction_keeps_the_title():
+    first = post_command("schedule a meeting tomorrow at 2 pm").json()
+    second = post_command("no, make it 3 pm", pending_context(first)).json()
+    tomorrow = (today() + timedelta(days=1)).isoformat()
+    assert second["status"] == "ready"
+    assert second["slots"]["title"] == "Meeting"
+    assert second["slots"]["start_at"] == f"{tomorrow}T15:00:00+00:00"
+    assert second["slots"]["end_at"] == f"{tomorrow}T16:00:00+00:00"
+
+
+def test_correction_keeps_the_task():
+    first = post_command("remind me to call Umer").json()
+    assert first["missing"] == ["remind_at"]
+
+    second = post_command("actually make it 6 pm tomorrow", pending_context(first)).json()
+    tomorrow = (today() + timedelta(days=1)).isoformat()
+    assert second["status"] == "ready"
+    assert second["slots"]["task"] == "Call Umer"
+    assert second["slots"]["remind_at"] == f"{tomorrow}T18:00:00+00:00"
+
+
+def test_lead_verb_can_still_rename_the_title():
+    first = post_command("schedule a meeting tomorrow at 2 pm").json()
+    second = post_command(
+        "actually schedule the design review tomorrow at 2 pm", pending_context(first)
+    ).json()
+    assert second["status"] == "ready"
+    assert second["slots"]["title"] == "Design review"
