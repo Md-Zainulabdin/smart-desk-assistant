@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     ENV: str = "dev"
+    DEFAULT_TIMEZONE: str = "UTC"
     DATABASE_URL: str = ""
     GROQ_API_KEY: str = ""
     GOOGLE_CLIENT_ID: str = ""
