@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Workspace packages ship TypeScript sources, so Next has to compile them.
+  transpilePackages: ["@desk/shared-types"],
   experimental: {
     agentFeedback: true,
   },
