@@ -16,12 +16,15 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@serwist/turbopack": "^9.5.13",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "serwist": "^9.5.13",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
