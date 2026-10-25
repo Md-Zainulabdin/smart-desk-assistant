@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { OfflineBanner } from "@/components/pwa/offline-banner";
+
 import { BottomNav } from "./bottom-nav";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -10,6 +12,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="text-sm font-semibold tracking-tight">Smart Desk</span>
         </div>
       </header>
+      <OfflineBanner />
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-6">{children}</main>
       <BottomNav />
     </div>
