@@ -37,10 +37,10 @@ Open it as a draft pull request into `develop` right away so CI runs and the tea
 
 | stage | scope | merge to develop? |
 |---|---|---|
-| 1 | Next.js scaffold: `tsconfig`, `next.config`, `app/`, styling, lint, env, npm deps, wire `shared-types` and `validation` | yes, checkpoint |
+| 1 | Next.js scaffold: `tsconfig`, `next.config`, `app/`, styling, lint, env, npm deps, PWA manifest and offline support, wire `shared-types` | yes, checkpoint |
 | 2 | Shared shell: layout, nav, API client, loading and error states | yes, with checkpoint 1 |
 | 3 | Auth screens and Google callback | yes, checkpoint 2 |
-| 4 | Notes and checklists | checkpoint 3 |
+| 4 | Notes | checkpoint 3 |
 | 5 | Reminders with snooze and dismiss | with checkpoint 3 |
 | 6 | Calendar upcoming and create | end |
 | 7 | Device and context status, notifications | end |
@@ -72,15 +72,44 @@ apps/mobile/
 - `.env.example` lists names only, no secrets.
 - `.env.local` stays local and gitignored.
 
+## PWA
+
+- The app manifest lives in `app/manifest.ts` and is served at `/manifest.webmanifest`.
+- The service worker is built by `@serwist/turbopack` from `app/sw.ts` through the route handler in `app/serwist/[path]/route.ts`, and served at `/serwist/sw.js`. It uses native esbuild because `esbuild-wasm` is broken on Windows.
+- `app/~offline/page.tsx` is precached and shown for failed document navigations.
+- Backend responses are never cached: `/api/` requests are `NetworkOnly`, and unmatched writes pass straight to the network. Stale notes or calendar data are worse than a failed request.
+- The service worker is disabled in development so it cannot serve stale responses while editing.
+- Icons are not added yet. Without a 192 and 512 icon Chrome will not offer the install prompt, though the app can still be installed from the browser menu.
+
 ## Backend Contracts
 
-The PWA is built against the backend API contracts. The main one so far:
+The PWA is built against the backend API contracts. The parser endpoint as it exists today:
 
 ```text
 POST /api/v1/command
-{ "text": "remind me to call mom tomorrow", "request_id": "optional" }
--> 200 { "text": "...", "intent": "CREATE_REMINDER", "slots": { "text": "...", "when": "tomorrow" } }
+{
+  "text": "Schedule a meeting tomorrow",
+  "request_id": null,
+  "timezone": "Asia/Karachi",
+  "context": null
+}
+
+-> 200
+{
+  "text": "Schedule a meeting tomorrow",
+  "intent": "CREATE_EVENT",
+  "status": "needs_clarification",
+  "slots": { "title": "Meeting", "date": "2026-10-21", "timezone": "Asia/Karachi" },
+  "missing": ["start_at"],
+  "clarification": "What time should the meeting start, and how long should it be?"
+}
 ```
+
+- `status` is `ready`, `needs_clarification`, or `unsupported`. Only `ready` may be executed.
+- To complete a pending command, send the previous response's `{intent, slots, missing}` back as `context` with the reply. The parser keeps no state.
+- Errors are `{ "detail": "...", "code": "..." }`, for example `invalid_command`, `invalid_timezone`, or `validation_error`.
+- `apps/mobile/lib/api.ts` is the only place that calls these endpoints.
+- Full contract: `docs/command-parser-contract.md`.
 
 Import the matching types from `packages/shared-types` rather than redeclaring them.
 
@@ -88,8 +117,15 @@ Import the matching types from `packages/shared-types` rather than redeclaring t
 
 Merge order before the PWA screens depend on the backend:
 
-1. `feature/command-intent` -> `develop`
-2. `feature/google-auth` -> `develop`
+1. ~~`feature/command-intent` -> `develop`~~ merged
+2. `feature/google-auth` -> `develop` — still open
+
+Until `feature/google-auth` lands, the browser cannot call the API:
+
+- `develop` has no `CORSMiddleware`, so requests from `http://localhost:3000` to `http://localhost:8000` are blocked.
+- There are no auth routes yet, so no `sd_session` cookie exists.
+
+Login must be a full-page navigation to `/auth/google`, never a fetch, so the session cookie is first-party.
 
 Then pull `develop` into `feature/pwa` so the API client is built against real contracts.
 
