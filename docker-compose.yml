@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:17
+    container_name: smart-desk-db
+    environment:
+      POSTGRES_USER: smartdesk
+      POSTGRES_PASSWORD: smartdesk_dev
+      POSTGRES_DB: smartdesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - smartdesk-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartdesk"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  smartdesk-pgdata:
