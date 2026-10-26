@@ -12,16 +12,17 @@
 //    Serial          -> USB Serial/JTAG console (printf / read)
 //
 //  States -> screen:
-//    IDLE      "Standby"       grey orb, "Say Jarvis"
+//    IDLE      Home            clock + date, latest reminder card (or "Say Jarvis")
 //    GREETING  "Jarvis"        green bars, greeting text
 //    LISTEN    "Listening"     blue orb, pulses with your voice
 //    UPLOAD    "Transcribing"  purple orb + dots
-//    result    "You said"      transcript (8 s), then back to Standby
-//    errors    red orb         message (4 s), then back to Standby
+//    result    "You said"      transcript (8 s), then back to Home
+//    errors    red orb         message (4 s), then back to Home
 //
 //  Serial: DUMP | TONE | HEAP | SET SIL <ms> | SET WAKE <0.4-0.9999> | SET GAIN <x>
 //  BOOT button: hold to record (manual session, ends on release);
-//               press while a reminder is speaking to stop it.
+//               press while a reminder is speaking to stop it;
+//               press on Home while a reminder card shows to dismiss it.
 //
 //  MQTT topics (<id> = last 3 MAC bytes, e.g. cee330):
 //    jarvis/<id>/transcript  QoS 1  {"device","id","text","audio_ms"}
@@ -46,6 +47,7 @@
 #include <fcntl.h>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -59,6 +61,7 @@
 #include "esp_http_client.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
 #include "mqtt_client.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -117,6 +120,9 @@
 #define TTS_PREBUFFER_MS 500               // audio piled up before playback (re)starts
 #define TTS_QUEUE_LEN    8                 // messages waiting to be spoken
 
+#define CLOCK_TZ   "PKT-5"         // POSIX TZ string: Pakistan, UTC+5
+#define CLOCK_NTP  "pool.ntp.org"
+
 #define WAV_HDR      44
 #define PCM_CAPACITY ((size_t)MAX_CMD_SECONDS * SAMPLE_RATE * 2)
 // -----------------------------------------------------------------------------
@@ -167,9 +173,13 @@ static LGFX tft;
 static slint::ComponentWeakHandle<AppWindow> g_ui;
 static std::atomic<uint32_t> uiGen { 0 }; // bumps on every screen change
 
-static void showIdle(const char *text = "Say \"Jarvis\" to wake me");
+static std::atomic<bool> onHome { false };    // Home screen is showing
+static std::atomic<bool> cardShown { false }; // a reminder card is on Home
+static uint32_t cardAtMs = 0;                 // when it arrived (event loop only)
 
-// Thread-safe: call from any task. revertMs > 0 returns to Standby later,
+static void showIdle();
+
+// Thread-safe: call from any task. revertMs > 0 returns to Home later,
 // unless something else changed the screen in the meantime.
 static void ui(AssistantState s, const char *status, std::string text, uint32_t revertMs = 0)
 {
@@ -177,6 +187,7 @@ static void ui(AssistantState s, const char *status, std::string text, uint32_t 
     slint::invoke_from_event_loop([=, text = std::move(text)] {
         auto h = g_ui.lock();
         if (!h) return;
+        onHome = s == AssistantState::Home;
         (*h)->set_assistant_state(s);
         (*h)->set_status_text(status);
         (*h)->set_transcript(slint::SharedString(text));
@@ -189,7 +200,51 @@ static void ui(AssistantState s, const char *status, std::string text, uint32_t 
     });
 }
 
-static void showIdle(const char *text) { ui(AssistantState::Idle, "Standby", text); }
+static void showIdle() { ui(AssistantState::Home, "", ""); }
+
+// Thread-safe. Puts text on the Home reminder card; empty text removes it.
+static void uiReminder(std::string text)
+{
+    cardShown = !text.empty();
+    slint::invoke_from_event_loop([text = std::move(text)] {
+        cardAtMs = millis();
+        if (auto h = g_ui.lock()) {
+            (*h)->set_reminder_text(slint::SharedString(text));
+            (*h)->set_reminder_ago("now");
+        }
+    });
+}
+
+// Runs every second in the Slint event loop: clock, date, card age.
+static void clockTick()
+{
+    auto h = g_ui.lock();
+    if (!h) return;
+
+    char t[8] = "--:--", d[32] = "Waiting for Wi-Fi";
+    const time_t now = time(nullptr);
+    if (now > 1700000000) { // SNTP has synced (any date after Nov 2023)
+        struct tm tm;
+        localtime_r(&now, &tm);
+        char wd[12], mon[12];
+        strftime(t, sizeof t, "%H:%M", &tm);
+        strftime(wd, sizeof wd, "%A", &tm);
+        strftime(mon, sizeof mon, "%B", &tm);
+        snprintf(d, sizeof d, "%s %d %s", wd, tm.tm_mday, mon); // "Saturday 25 October"
+    } else if (wifiUp) {
+        strcpy(d, "Syncing time...");
+    }
+    (*h)->set_time_text(t);
+    (*h)->set_date_text(d);
+
+    if (cardShown) {
+        const uint32_t min = (millis() - cardAtMs) / 60000;
+        char a[16] = "now";
+        if (min >= 60)    snprintf(a, sizeof a, "%uh ago", (unsigned)(min / 60));
+        else if (min > 0) snprintf(a, sizeof a, "%um ago", (unsigned)min);
+        (*h)->set_reminder_ago(a);
+    }
+}
 
 static void uiLevel(float v)
 {
@@ -352,6 +407,13 @@ static void wifiStart()
 {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    // Clock: SNTP keeps retrying in the background until Wi-Fi is up
+    setenv("TZ", CLOCK_TZ, 1);
+    tzset();
+    esp_sntp_config_t sc = ESP_NETIF_SNTP_DEFAULT_CONFIG(CLOCK_NTP);
+    esp_netif_sntp_init(&sc);
+
     esp_netif_create_default_wifi_sta();
     wifi_init_config_t ic = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&ic));
@@ -443,8 +505,7 @@ static void mqttInit()
     snprintf(topicTranscript, sizeof topicTranscript, MQTT_TOPIC_ROOT "/%s/transcript", deviceId);
     snprintf(topicStatus, sizeof topicStatus, MQTT_TOPIC_ROOT "/%s/status", deviceId);
     snprintf(topicReminder, sizeof topicReminder, MQTT_TOPIC_ROOT "/%s/reminder", deviceId);
-    snprintf(topicResponse, sizeof topicResponse, MQTT_TOPIC_ROOT "/%s/response", deviceId);
-    bootId = esp_random();
+    snprintf(topicResponse, sizeof topicResponse, MQTT_TOPIC_ROOT "/%s/response", deviceId);    bootId = esp_random();
 
     if (strstr(SEED_MQTT_HOST, "YOUR-")) {
         printf("[mqtt] disabled - fill in SEED_MQTT_* in secrets.h\n");
@@ -822,8 +883,11 @@ static void ttsFetchTask(void *)
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // ttsPlayTask has drained the buffer
 
         state = ST_IDLE;
+        const bool isReminder = strcmp(m->title, "Reminder") == 0;
+        if (isReminder) uiReminder(m->text); // stays on the Home card, even if speech failed
         if (ttsStop)           { printf("[tts] stopped\n"); showIdle(); }
         else if (!err.empty()) { printf("[tts] failed: %s\n", err.c_str()); ui(AssistantState::Error, "Error", err, 4000); }
+        else if (isReminder)   showIdle();
         else                   ui(AssistantState::Idle, m->title, m->text, 6000);
         delete m;
         printf("[idle] say \"Jarvis\"...\n");
@@ -1181,8 +1245,10 @@ static void buttonTask(void *)
         if (gpio_get_level(PIN_BUTTON) == 0) {
             if (buttonLowSince == 0) buttonLowSince = millis();
             if (buttonArmed && millis() - buttonLowSince >= 30) {
-                if (state == ST_IDLE) manualWake = true;
-                else if (state == ST_SPEAKING) ttsStop = true; // BOOT interrupts a reminder
+                if (state == ST_IDLE) {
+                    if (onHome && cardShown) uiReminder(""); // dismiss the reminder card
+                    else manualWake = true;
+                } else if (state == ST_SPEAKING) ttsStop = true; // BOOT interrupts a reminder
                 buttonArmed = false; // one trigger per physical press
             }
         } else {
@@ -1287,6 +1353,8 @@ extern "C" void app_main(void)
     win->set_transcript("Loading wake word...");
 
     xTaskCreatePinnedToCore(setupTask, "setup", 12288, nullptr, 4, nullptr, 1);
+
+    slint::Timer clock(std::chrono::seconds(1), clockTick); // Home clock, lives as long as run()
 
     win->run(); // Slint event loop on core 0, lowest priority of the busy tasks
 }

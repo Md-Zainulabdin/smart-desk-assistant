@@ -1,0 +1,42 @@
+﻿// Preview only: home screen states to check in the Slint preview.
+// Not part of the firmware build (slint_build.py only reads src/ui/).
+
+import { HomeScreen } from "../src/ui/home.slint";
+
+// Latest reminder shown as a card
+export component WithReminder inherits Window {
+    width: 128px;
+    height: 160px;
+
+    Hom'eScreen {
+        time: "14:35";
+        date: "Saturday 25 October";
+        wifi-connected: true;
+        x: -0px;
+        y: 1px;
+        reminder-text: "Team meeting at 3 PM in the lab, bring the ESP32 board";
+        reminder-ago: "2m ago";
+    }
+}
+
+// No reminder: the "Say Jarvis" hint shows
+export component NoReminder inherits Window {
+    width: 128px;
+    height: 160px;
+
+    HomeScreen {
+        time: "09:41";
+        date: "Saturday 25 October";
+        wifi-connected: true;
+    }
+}
+
+// Right after boot: no Wi-Fi, clock not synced yet
+export component Offline inherits Window {
+    width: 128px;
+    height: 160px;
+
+    HomeScreen {
+        date: "Waiting for Wi-Fi";
+    }
+}

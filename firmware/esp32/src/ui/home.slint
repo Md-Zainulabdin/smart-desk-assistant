@@ -1,0 +1,159 @@
+// iPhone-style home screen (like the lock screen): date + clock on top,
+// the latest reminder as a notification card below. 128x160, ST7735S.
+//
+// Font sizes must be literals: the firmware build pre-renders glyphs only
+// for sizes it can see at compile time.
+
+import "fonts/Inter-Light.ttf";
+import "fonts/Inter-Regular.ttf";
+import "fonts/Inter-SemiBold.ttf";
+
+// ---------- Status bar: only the Wi-Fi icon, top right ----------
+component StatusBar inherits Rectangle {
+    in property <bool> wifi-connected;
+    height: 14px;
+
+    Image {
+        x: parent.width - self.width;
+        y: 3px;
+        width: 12px;
+        height: 9px;
+        source: @image-url("icons/wifi.svg");
+        colorize: root.wifi-connected ? #ffffff : #ffffff4d;
+    }
+}
+
+// ---------- Notification card ("glass" = translucent white) ----------
+component ReminderCard inherits Rectangle {
+    in property <string> text;
+    in property <string> ago;
+
+    height: 58px;
+    border-radius: 9px;
+    background: #ffffff2e;
+
+    VerticalLayout {
+        padding: 6px;
+        padding-top: 5px;
+        spacing: 2px;
+
+        HorizontalLayout {
+            height: 9px;
+            spacing: 3px;
+
+            // App icon: small orange square, like the iOS Reminders badge
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 2px;
+                background: #ff9f0a;
+            }
+
+            Text {
+                horizontal-stretch: 0;
+                text: "REMINDER";
+                font-family: "Inter";
+                font-size: 7px;
+                font-weight: 600;
+                color: #ffffffb3;
+                vertical-alignment: center;
+            }
+
+            Text {
+                horizontal-stretch: 1;
+                text: root.ago;
+                font-family: "Inter";
+                font-size: 7px;
+                font-weight: 400;
+                color: #ffffff99;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: root.text;
+            font-family: "Inter";
+            font-size: 10px;
+            font-weight: 600;
+            color: #ffffff;
+            wrap: word-wrap;
+            overflow: elide;
+            vertical-alignment: top;
+        }
+    }
+}
+
+// ---------- The home screen ----------
+export component HomeScreen inherits Rectangle {
+    in property <string> time: "--:--";
+    in property <string> date;
+    in property <bool> wifi-connected;
+    in property <string> reminder-text; // empty = no card, show the hint
+    in property <string> reminder-ago;
+
+    width: 128px;
+    height: 160px;
+    clip: true;
+    background: @linear-gradient(170deg, #26365c 0%, #101a33 45%, #05070a 100%);
+
+    VerticalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-bottom: 6px;
+        spacing: 0;
+
+        StatusBar {
+            wifi-connected: root.wifi-connected;
+        }
+
+        Text {
+            height: 11px;
+            text: root.date;
+            font-family: "Inter";
+            font-size: 9px;
+            font-weight: 600;
+            color: #ffffffcc;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            height: 42px;
+            text: root.time;
+            font-family: "Inter";
+            font-size: 36px;
+            font-weight: 300;
+            color: #ffffff;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        // Spacer: pushes the card to the bottom
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        if root.reminder-text != "": ReminderCard {
+            text: root.reminder-text;
+            ago: root.reminder-ago;
+        }
+
+        // No reminder: a faint hint pill instead
+        if root.reminder-text == "": Rectangle {
+            height: 18px;
+            border-radius: 9px;
+            background: #ffffff1a;
+
+            Text {
+                text: "Say \"Jarvis\"";
+                font-family: "Inter";
+                font-size: 9px;
+                font-weight: 400;
+                color: #ffffff99;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
