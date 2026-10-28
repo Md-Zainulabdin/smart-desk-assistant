@@ -16,3 +16,9 @@ class MeetingIn(BaseModel):
         if self.end <= self.start:
             raise ValueError("end must be after start")
         return self
+
+
+class MeetingOut(BaseModel):
+    id: str
+    link: str
+    meet_link: str | None

@@ -1,12 +1,18 @@
+import logging
+
+import asyncpg
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
-from app.db import get_db
-from app.users.controller import current_user
-from app.users.repo import save_google_user
+from app.core.security import end_session, start_session
+from app.database.models import User
+from app.dependencies import current_user, get_db
+from app.modules.auth.schemas import LogoutOut, UserOut
+from app.modules.auth.service import SignInRejected, sign_in_google_user
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -29,29 +35,28 @@ async def google_start(request: Request):
 
 
 @router.get("/google/callback")
-async def google_callback(request: Request, conn=Depends(get_db)):
+async def google_callback(request: Request, db: asyncpg.Connection = Depends(get_db)):
     try:
         token = await oauth.google.authorize_access_token(request)
-    except OAuthError:
+    except OAuthError as e:
+        logger.warning("Google OAuth failed: %s", e.error)
         return RedirectResponse(f"{settings.PWA_ORIGIN}/?auth_error=google_error")
 
-    info = token["userinfo"]
-    allowed = [e.strip().lower() for e in settings.ALLOWED_GOOGLE_EMAILS.split(",")]
-    if not info.get("email_verified") or info["email"].lower() not in allowed:
-        return RedirectResponse(f"{settings.PWA_ORIGIN}/?auth_error=not_allowed")
+    try:
+        user = await sign_in_google_user(db, token)
+    except SignInRejected as e:
+        return RedirectResponse(f"{settings.PWA_ORIGIN}/?auth_error={e.reason}")
 
-    user = save_google_user(conn, info, token.get("refresh_token"))
-    request.session.clear()
-    request.session["user_id"] = str(user.id)
+    start_session(request, user.id)
     return RedirectResponse(settings.PWA_ORIGIN)
 
 
-@router.get("/me")
-def me(user=Depends(current_user)):
+@router.get("/me", response_model=UserOut)
+def me(user: User = Depends(current_user)):
     return user
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=LogoutOut)
 def logout(request: Request):
-    request.session.clear()
-    return {"ok": True}
+    end_session(request)
+    return LogoutOut(ok=True)
