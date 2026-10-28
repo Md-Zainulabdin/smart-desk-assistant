@@ -18,7 +18,7 @@ For design decisions, current status and gotchas, see [HANDOFF.md](HANDOFF.md).
 | ST7735S TFT (SPI) | SCLK 12, MOSI 11, DC 9, CS 10, RST 8, BL 7 |
 | INMP441 mic (I2S0) | SD 4, SCK 5, WS 6, L/R → GND |
 | MAX98357A amp (I2S1) | BCLK 16, LRC 17, DIN 15, VIN 5 V |
-| BOOT button | GPIO 0: hold to record, press to stop a reminder |
+| BOOT button | GPIO 0: hold to record, press to stop a reminder, press on Home to dismiss the reminder card |
 
 The console is the **native USB** port (USB-Serial/JTAG).
 

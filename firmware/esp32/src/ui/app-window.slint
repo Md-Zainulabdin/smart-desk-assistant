@@ -1,7 +1,10 @@
 // Jarvis assistant UI — 128x160 portrait, ST7735S
 // Preview on your PC with the Slint VS Code extension before flashing.
 
-export enum AssistantState { idle, listening, thinking, speaking, error }
+import { HomeScreen } from "home.slint";
+
+// home = clock + reminder card; every other state shows the Jarvis screen
+export enum AssistantState { home, idle, listening, thinking, speaking, error }
 
 // ---------- The animated "orb" in the middle of the screen ----------
 component Orb inherits Rectangle {
@@ -81,12 +84,18 @@ export component AppWindow inherits Window {
     height: 160px;
     background: #05070a;
 
-    // Set these from C++ (set_assistant_state, set_transcript, set_wifi_connected)
+    // Set these from C++ (set_assistant_state, set_transcript, set_wifi_connected, ...)
     in property <AssistantState> assistant-state: AssistantState.idle;
     in property <string> transcript: "Say \"Jarvis\" to wake me";
     in property <bool> wifi-connected: false;
     in property <string> status-text: "Starting";
     in property <float> level: 0;
+
+    // Home screen
+    in property <string> time-text: "--:--";
+    in property <string> date-text: "Waiting for Wi-Fi";
+    in property <string> reminder-text; // empty = no card
+    in property <string> reminder-ago;
 
     property <color> accent: assistant-state == AssistantState.listening ? #2ec4ff
         : assistant-state == AssistantState.thinking ? #b388ff
@@ -94,82 +103,98 @@ export component AppWindow inherits Window {
         : assistant-state == AssistantState.error ? #ff5c5c
         : #4a6a8a;
 
-    // Header bar
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: 18px;
-        background: #0b1118;
+    if root.assistant-state == AssistantState.home: HomeScreen {
+        time: root.time-text;
+        date: root.date-text;
+        wifi-connected: root.wifi-connected;
+        reminder-text: root.reminder-text;
+        reminder-ago: root.reminder-ago;
+    }
 
+    // Jarvis screen. Created only while not on Home, so its animations
+    // stop (and the CPU sleeps) while the clock is showing.
+    if root.assistant-state != AssistantState.home: Rectangle {
+        width: 128px;
+        height: 160px;
+
+        // Header bar
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 18px;
+            background: #0b1118;
+
+            Text {
+                x: 6px;
+                height: parent.height;
+                text: "JARVIS";
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 1.5px;
+                color: #e6edf3;
+                vertical-alignment: center;
+            }
+
+            // Wi-Fi icon (SVG is rasterized at build time for the software renderer)
+            Image {
+                x: parent.width - 21px;
+                y: 3px;
+                width: 16px;
+                height: 12px;
+                source: @image-url("icons/wifi.svg");
+                colorize: root.wifi-connected ? #3fb950 : #6e7681;
+            }
+        }
+
+        Rectangle {
+            x: 0;
+            y: 18px;
+            width: parent.width;
+            height: 1px;
+            background: #1f2a36;
+        }
+
+        Orb {
+            y: 24px;
+            state: root.assistant-state;
+            accent: root.accent;
+            level: root.level;
+        }
+
+        // Status label (+ dots while thinking)
         Text {
-            x: 6px;
-            height: parent.height;
-            text: "JARVIS";
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1.5px;
-            color: #e6edf3;
+            y: 100px;
+            width: parent.width;
+            height: 14px;
+            text: root.status-text;
+            font-size: 11px;
+            font-weight: 600;
+            color: root.accent;
+            horizontal-alignment: center;
             vertical-alignment: center;
         }
 
-        // Wi-Fi status dot
-        Rectangle {
-            x: parent.width - 12px;
-            width: 6px;
+        if root.assistant-state == AssistantState.thinking: Dots {
+            y: 115px;
+            width: parent.width;
             height: 6px;
-            border-radius: 3px;
-            background: root.wifi-connected ? #3fb950 : #6e7681;
+            accent: root.accent;
         }
-    }
 
-    Rectangle {
-        x: 0;
-        y: 18px;
-        width: parent.width;
-        height: 1px;
-        background: #1f2a36;
-    }
-
-    Orb {
-        y: 24px;
-        state: root.assistant-state;
-        accent: root.accent;
-        level: root.level;
-    }
-
-    // Status label (+ dots while thinking)
-    Text {
-        y: 100px;
-        width: parent.width;
-        height: 14px;
-        text: root.status-text;
-        font-size: 11px;
-        font-weight: 600;
-        color: root.accent;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    if root.assistant-state == AssistantState.thinking: Dots {
-        y: 115px;
-        width: parent.width;
-        height: 6px;
-        accent: root.accent;
-    }
-
-    // Transcript / response text
-    Text {
-        x: 6px;
-        y: 124px;
-        width: parent.width - 12px;
-        height: 34px;
-        text: root.transcript;
-        font-size: 9px;
-        color: #9aa4ae;
-        wrap: word-wrap;
-        overflow: elide;
-        horizontal-alignment: center;
-        vertical-alignment: top;
+        // Transcript / response text
+        Text {
+            x: 6px;
+            y: 124px;
+            width: parent.width - 12px;
+            height: 34px;
+            text: root.transcript;
+            font-size: 9px;
+            color: #9aa4ae;
+            wrap: word-wrap;
+            overflow: elide;
+            horizontal-alignment: center;
+            vertical-alignment: top;
+        }
     }
 }

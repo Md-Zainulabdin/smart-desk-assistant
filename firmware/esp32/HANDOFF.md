@@ -79,7 +79,7 @@ PlatformIO uses ESP-IDF's CMake only to configure the build, then compiles with 
 | Firmware state | Screen |
 |---|---|
 | boot | "Starting" / "Loading wake word..." |
-| `ST_IDLE` | Idle, grey orb, "Standby", "Say Jarvis" |
+| `ST_IDLE` | Home (`src/ui/home.slint`): SNTP clock + date (`CLOCK_TZ`), latest reminder card or "Say Jarvis" hint |
 | `ST_GREETING` | Speaking, green bars, "Jarvis" + the greeting line |
 | `ST_LISTEN` | Listening, blue orb pulsing with the mic level |
 | `ST_UPLOAD` | Thinking, purple orb + dots, "Transcribing" |
