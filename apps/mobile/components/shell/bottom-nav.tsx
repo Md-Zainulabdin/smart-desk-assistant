@@ -31,10 +31,10 @@ export function BottomNav() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex h-14 items-center justify-center text-xs font-medium transition-colors ${
+                className={`flex h-14 items-center justify-center text-xs transition-colors ${
                   active
-                    ? "text-foreground"
-                    : "text-zinc-500 hover:text-foreground dark:text-zinc-400"
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-zinc-500 hover:text-foreground dark:text-zinc-400"
                 }`}
               >
                 {item.label}
