@@ -2,10 +2,13 @@ import type { CommandRequest, CommandResponse } from "@desk/shared-types";
 
 import { API_URL } from "./env";
 
+/** Give up after this long so the UI can show an error instead of loading forever. */
+const TIMEOUT_MS = 10_000;
+
 /**
  * A failed backend call. `code` carries the backend error code, for example
- * `invalid_timezone` or `invalid_command`, and `network_error` when the server
- * could not be reached at all.
+ * `invalid_timezone` or `invalid_command`. The client adds `network_error` when
+ * the server could not be reached and `timeout` when it did not answer in time.
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -43,8 +46,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials: "include" });
-  } catch {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers,
+      credentials: "include",
+      signal: init.signal ?? AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new ApiError("The server took too long to answer.", 0, "timeout");
+    }
     throw new ApiError("Could not reach the server.", 0, "network_error");
   }
 
@@ -55,10 +66,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return body as T;
-}
-
-export function getHealth(): Promise<{ status: string }> {
-  return request<{ status: string }>("/health");
 }
 
 /** Parse one command. Send the previous response back as `context` to complete it. */
