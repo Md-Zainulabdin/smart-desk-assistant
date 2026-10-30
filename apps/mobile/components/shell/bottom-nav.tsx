@@ -7,8 +7,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/notes", label: "Notes" },
   { href: "/reminders", label: "Reminders" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/device", label: "Device" },
+  { href: "/settings", label: "Settings" },
 ] as const;
 
 function isActive(pathname: string, href: string): boolean {
@@ -21,7 +20,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary"
-      className="sticky bottom-0 border-t border-black/[.08] bg-background/80 backdrop-blur dark:border-white/[.145]"
+      className="sticky bottom-0 border-t border-hairline bg-background/80 backdrop-blur"
     >
       <ul className="mx-auto flex w-full max-w-3xl">
         {NAV_ITEMS.map((item) => {

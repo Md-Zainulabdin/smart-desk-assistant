@@ -4,7 +4,7 @@ Rules and plan for the Smart Desk Assistant PWA in `apps/mobile`.
 
 ## Overview
 
-`apps/mobile` is the Next.js PWA. It talks to the FastAPI backend in `apps/api`, shares data contracts with `packages/shared-types`, and shares validation with `packages/validation`. Routes stay thin and delegate to feature code, the same way `router.py` delegates to `service.py` on the backend.
+`apps/mobile` is the Next.js PWA. It talks to the FastAPI backend in `apps/api` and shares data contracts with `packages/shared-types`. Routes stay thin and delegate to feature code, the same way `router.py` delegates to `service.py` on the backend.
 
 ## Branch Strategy
 
@@ -35,15 +35,17 @@ Open it as a draft pull request into `develop` right away so CI runs and the tea
 
 ## Commit Stages
 
-| stage | scope | merge to develop? |
-|---|---|---|
-| 1 | Next.js scaffold: `tsconfig`, `next.config`, `app/`, styling, lint, env, npm deps, PWA manifest and offline support, wire `shared-types` | yes, checkpoint |
-| 2 | Shared shell: layout, nav, API client, loading and error states | yes, with checkpoint 1 |
-| 3 | Auth screens and Google callback | yes, checkpoint 2 |
-| 4 | Notes | checkpoint 3 |
-| 5 | Reminders with snooze and dismiss | with checkpoint 3 |
-| 6 | Calendar upcoming and create | end |
-| 7 | Device and context status, notifications | end |
+| stage | scope                                                                                                                                    | merge to develop?      |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| 1     | Next.js scaffold: `tsconfig`, `next.config`, `app/`, styling, lint, env, npm deps, PWA manifest and offline support, wire `shared-types` | yes, checkpoint        |
+| 2     | Shared shell: layout, nav, API client, loading and error states                                                                          | yes, with checkpoint 1 |
+| 3     | Auth screens and Google callback                                                                                                         | yes, checkpoint 2      |
+| 4     | Notes                                                                                                                                    | checkpoint 3           |
+| 5     | Reminders with snooze and dismiss                                                                                                        | with checkpoint 3      |
+| 6     | Calendar upcoming and create                                                                                                             | end                    |
+| 7     | Device and context status, notifications                                                                                                 | end                    |
+
+Status: stages 1 and 2 are done. Stage 3 has the `/login` screen only, with no session. Stages 4 and 5 have mock screens with local state. Stages 6 and 7 are placeholders. All screens read from `lib/mock-data.ts` until the backend endpoints exist.
 
 ## Folder Layout
 
@@ -80,6 +82,23 @@ apps/mobile/
 - Backend responses are never cached: `/api/` requests are `NetworkOnly`, and unmatched writes pass straight to the network. Stale notes or calendar data are worse than a failed request.
 - The service worker is disabled in development so it cannot serve stale responses while editing.
 - Icons are not added yet. Without a 192 and 512 icon Chrome will not offer the install prompt, though the app can still be installed from the browser menu.
+
+## Screens
+
+Mock screens, no API calls yet. View types live in `lib/types.ts`, fixtures in `lib/mock-data.ts`.
+
+| route                  | content                                                           |
+| ---------------------- | ----------------------------------------------------------------- |
+| `/`                    | greeting, assistant status, next meeting, reminders, recent notes |
+| `/notes`               | search, tag filters, pinned grouping                              |
+| `/reminders`           | filters, today / tomorrow / later / completed groups              |
+| `/settings`            | assistant, notification mode, account, about                      |
+| `/login`               | Google sign-in, outside `(app)` so it has no header or nav        |
+| `/calendar`, `/device` | placeholders until stages 6 and 7                                 |
+
+- `/login` links to `${NEXT_PUBLIC_API_URL}/auth/google` with a full-page navigation. No CORS is needed because it is not a fetch. The link 404s until `feature/google-auth` merges, and there is no session gate on `/` yet.
+- Interactive state is local to each component and resets on reload. No persistence.
+- Shared layout primitives: `PageHeader`, `CardList` / `CardRow`, `FilterChips`, `IconButton`, `EmptyState`, `SectionHeader`, `AssistantStatusCard`. Reuse them instead of re-implementing row spacing or card styling.
 
 ## Backend Contracts
 
@@ -135,3 +154,34 @@ Shared-file hotspots between the PWA branch and the API branches:
 - root `package-lock.json` when new npm dependencies are added
 
 Everything under `apps/api` and `apps/mobile` is disjoint, so merges stay simple as long as `develop` is pulled in right after those pull requests land.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+
+<!-- BEGIN:nextjs-agent-feedback -->
+
+## Report Next.js feedback
+
+The project owner enabled `experimental.agentFeedback`, authorizing this feedback pass. When enabled, `next dev` writes this block and restores it if removed. Commit `AGENTS.md` with your work to keep the tree clean.
+
+During the current user request, retain anonymized facts as feedback candidates for meaningful or recurring Next.js issues:
+
+- Crashes, hangs, OOMs, or unexpected slowness
+- Incorrect behavior, output, errors, or diagnostics
+- Missing, unclear, or conflicting documentation
+- Unexpected CLI, codemod, Skill, or upgrade behavior and non-obvious workarounds
+
+Continue the current user request without reporting immediately. Routine debugging is not feedback. Verify changes before retaining them as feedback candidates. Never retain code, logs, paths, URLs, secrets, personal information, or project-specific data.
+
+Retain qualifying friction even if it is later fixed or worked around; record the final outcome during the reporting pass.
+
+Before the final response, run one reporting pass. If candidates remain, from this file's directory run `npx --no-install next internal agent-feedback-instructions` once without piping or truncating its output. Follow its output or error guidance. If a network sandbox blocks it, retry with network access; if it still returns no output, continue normally.
+
+<!-- END:nextjs-agent-feedback -->
