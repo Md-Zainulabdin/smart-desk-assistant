@@ -8,9 +8,6 @@ export const metadata: Metadata = {
 
 export default function DevicePage() {
   return (
-    <PagePlaceholder
-      title="Device"
-      description="Device and context status are added in stage 7."
-    />
+    <PagePlaceholder title="Device" description="Device and context status are added in stage 7." />
   );
 }

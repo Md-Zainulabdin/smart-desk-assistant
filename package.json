@@ -8,6 +8,9 @@
   ],
   "scripts": {
     "dev:mobile": "npm run dev -w apps/mobile",
-    "build:mobile": "npm run build -w apps/mobile"
+    "build:mobile": "npm run build -w apps/mobile",
+    "lint:mobile": "npm run lint -w apps/mobile",
+    "typecheck:mobile": "npm run typecheck -w apps/mobile",
+    "format:check:mobile": "npm run format:check -w apps/mobile"
   }
 }
