@@ -6,21 +6,23 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
-from app.db import pool, run_migrations
-from app.routers.calendar import router as calendar_router
-from app.routers.google_auth import router as google_auth_route
-from app.routers.health import router as health_router
+from app.core.logging import setup_logging
+from app.database.connection import close_pool, open_pool, run_migrations
+from app.modules.auth.router import router as auth_router
+from app.modules.calendar.router import router as calendar_router
+from app.modules.health.router import router as health_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    run_migrations()
-    pool.open()
+    await run_migrations()
+    await open_pool()
     yield
-    pool.close()
+    await close_pool()
 
 
 def create_app() -> FastAPI:
+    setup_logging()
     settings = get_settings()
     app = FastAPI(title="desk-api", lifespan=lifespan)
     register_exception_handlers(app)
@@ -41,7 +43,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health_router)
-    app.include_router(google_auth_route)
+    app.include_router(auth_router)
     app.include_router(calendar_router)
     return app
 

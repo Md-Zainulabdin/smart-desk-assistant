@@ -3,8 +3,8 @@ import uuid
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-from app.calendar.models import MeetingIn
 from app.config import get_settings
+from app.modules.calendar.schemas import MeetingIn
 
 
 def calendar_service(refresh_token: str):
