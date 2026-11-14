@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REFRESH_TOKEN: str = ""
+    TAVILY_API_KEY: str = ""
 
 
 @lru_cache
