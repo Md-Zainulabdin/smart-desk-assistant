@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     database_url: str
     pwa_origin: str = "http://localhost:3000"
     cookie_secure: bool = False
+    session_ttl_days: int = 30
+    api_base_url: str = "http://localhost:8000"
+    session_cookie_name: str = "sd_session"
 
 
 settings = Settings()

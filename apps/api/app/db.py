@@ -20,13 +20,11 @@ pool = ConnectionPool(
 
 
 def get_db() -> Iterator[psycopg.Connection]:
-    """FastAPI dependency: a pooled connection, committed on success."""
     with pool.connection() as conn:
         yield conn
 
 
 def run_migrations() -> None:
-    """Apply any pending migrations/*.sql files (tracked by yoyo)."""
     backend = get_backend(settings.database_url.replace("postgresql://", "postgresql+psycopg://", 1))
     migrations = read_migrations(str(MIGRATIONS_DIR))
     with backend.lock():
