@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.15.0",
     "python-multipart>=0.0.32",
     "starlette>=1.6.0",
+    "tzdata>=2025.2",
     "uvicorn[standard]>=0.53.0",
 ]
 

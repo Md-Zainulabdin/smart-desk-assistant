@@ -1,0 +1,17 @@
+M	apps/api/.env.example
+M	apps/api/README.md
+M	apps/api/app/config.py
+M	apps/api/app/core/exceptions.py
+M	apps/api/app/main.py
+M	apps/api/app/modules/command/extract.py
+A	apps/api/app/modules/web_search/__init__.py
+A	apps/api/app/modules/web_search/routes.py
+A	apps/api/app/modules/web_search/schemas.py
+A	apps/api/app/modules/web_search/services.py
+A	apps/api/app/services/__init__.py
+A	apps/api/app/services/response.py
+M	apps/api/pyproject.toml
+A	apps/api/tests/services/__init__.py
+A	apps/api/tests/services/test_web_search.py
+A	apps/api/tests/test_search_api.py
+M	apps/api/uv.lock
