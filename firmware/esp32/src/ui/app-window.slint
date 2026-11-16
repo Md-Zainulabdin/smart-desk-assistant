@@ -1,0 +1,175 @@
+// Jarvis assistant UI — 128x160 portrait, ST7735S
+// Preview on your PC with the Slint VS Code extension before flashing.
+
+export enum AssistantState { idle, listening, thinking, speaking, error }
+
+// ---------- The animated "orb" in the middle of the screen ----------
+component Orb inherits Rectangle {
+    in property <AssistantState> state;
+    in property <color> accent;
+    in property <float> level; // 0..1 mic level (listening only)
+
+    width: 72px;
+    height: 72px;
+
+    // Speed of the pulse depends on the state. animation-tick() is only
+    // referenced while the orb is visible, so the CPU sleeps otherwise.
+    property <duration> period: state == AssistantState.listening ? 900ms
+        : state == AssistantState.thinking ? 600ms
+        : 2400ms;
+    property <float> wave: state == AssistantState.error ? 0 : (Math.sin(360deg * animation-tick() / period) + 1) / 2;
+
+    // Soft halo (grows/shrinks)
+    Rectangle {
+        width: root.width * (0.78 + 0.22 * Math.max(wave * (state == AssistantState.listening ? 0.4 : 1), level));
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.accent.with-alpha(0.10 + 0.12 * wave);
+    }
+
+    // Thin ring
+    Rectangle {
+        width: 54px;
+        height: 54px;
+        border-radius: 27px;
+        border-width: 2px;
+        border-color: root.accent.with-alpha(0.75);
+    }
+
+    // Solid core — hidden while speaking (bars are shown instead)
+    if state != AssistantState.speaking: Rectangle {
+        width: (state == AssistantState.idle ? 26px : 30px) + 6px * Math.max(wave, level * 1.5);
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.accent;
+    }
+
+    // Speaking: 5 equalizer bars
+    if state == AssistantState.speaking: HorizontalLayout {
+        width: 34px;
+        height: 30px;
+        spacing: 3px;
+        alignment: center;
+        for i in 5: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 4px;
+                height: 6px + 22px * (Math.sin(360deg * animation-tick() / 520ms + i * 70deg) + 1) / 2;
+                border-radius: 2px;
+                background: root.accent;
+            }
+        }
+    }
+}
+
+// ---------- Three blinking dots for "thinking" ----------
+component Dots inherits HorizontalLayout {
+    in property <color> accent;
+    spacing: 4px;
+    alignment: center;
+    for i in 3: Rectangle {
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: accent.with-alpha(0.25 + 0.75 * (Math.sin(360deg * animation-tick() / 900ms - i * 90deg) + 1) / 2);
+    }
+}
+
+// ---------- Main window ----------
+export component AppWindow inherits Window {
+    width: 128px;
+    height: 160px;
+    background: #05070a;
+
+    // Set these from C++ (set_assistant_state, set_transcript, set_wifi_connected)
+    in property <AssistantState> assistant-state: AssistantState.idle;
+    in property <string> transcript: "Say \"Jarvis\" to wake me";
+    in property <bool> wifi-connected: false;
+    in property <string> status-text: "Starting";
+    in property <float> level: 0;
+
+    property <color> accent: assistant-state == AssistantState.listening ? #2ec4ff
+        : assistant-state == AssistantState.thinking ? #b388ff
+        : assistant-state == AssistantState.speaking ? #3ddc97
+        : assistant-state == AssistantState.error ? #ff5c5c
+        : #4a6a8a;
+
+    // Header bar
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 18px;
+        background: #0b1118;
+
+        Text {
+            x: 6px;
+            height: parent.height;
+            text: "JARVIS";
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: #e6edf3;
+            vertical-alignment: center;
+        }
+
+        // Wi-Fi status dot
+        Rectangle {
+            x: parent.width - 12px;
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: root.wifi-connected ? #3fb950 : #6e7681;
+        }
+    }
+
+    Rectangle {
+        x: 0;
+        y: 18px;
+        width: parent.width;
+        height: 1px;
+        background: #1f2a36;
+    }
+
+    Orb {
+        y: 24px;
+        state: root.assistant-state;
+        accent: root.accent;
+        level: root.level;
+    }
+
+    // Status label (+ dots while thinking)
+    Text {
+        y: 100px;
+        width: parent.width;
+        height: 14px;
+        text: root.status-text;
+        font-size: 11px;
+        font-weight: 600;
+        color: root.accent;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.assistant-state == AssistantState.thinking: Dots {
+        y: 115px;
+        width: parent.width;
+        height: 6px;
+        accent: root.accent;
+    }
+
+    // Transcript / response text
+    Text {
+        x: 6px;
+        y: 124px;
+        width: parent.width - 12px;
+        height: 34px;
+        text: root.transcript;
+        font-size: 9px;
+        color: #9aa4ae;
+        wrap: word-wrap;
+        overflow: elide;
+        horizontal-alignment: center;
+        vertical-alignment: top;
+    }
+}

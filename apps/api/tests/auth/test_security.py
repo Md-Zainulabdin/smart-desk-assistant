@@ -1,7 +1,12 @@
 from fastapi import Response
 
 from app.config import settings
-from app.core.security import clear_session_cookie, hash_token, new_session_token, set_session_cookie
+from app.core.security import (
+    clear_session_cookie,
+    hash_token,
+    new_session_token,
+    set_session_cookie,
+)
 
 
 def test_tokens_are_random_and_hash_is_stable():

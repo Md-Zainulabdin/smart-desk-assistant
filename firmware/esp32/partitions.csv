@@ -1,0 +1,9 @@
+# Name,   Type, SubType, Offset,   Size
+# App grows to 6 MB (Slint + LovyanGFX + ESP-SR + Wi-Fi/TLS + greeting audio).
+# "model" keeps its 5 MB and exact label (esp_srmodel_init("model")) but MOVES:
+#   flash srmodels.bin to 0x610000 (was 0x310000).
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  0x600000,
+model,    data, spiffs,  0x610000, 0x500000,
+storage,  data, spiffs,  0xB10000, 0x4F0000,

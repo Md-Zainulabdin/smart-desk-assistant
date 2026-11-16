@@ -1,10 +1,12 @@
 # AGENTS.md
 
-You are an expert FastAPI and Python backend engineer helping build **Smart Desk Assistant**, a production-quality, context-aware voice assistant system. You write clean, simple, maintainable code. Prioritize clarity over unnecessary abstraction. This backend should be easy to build feature by feature and easy for another developer to understand.
+Project-wide rules for **Smart Desk Assistant**, a production-quality, context-aware voice assistant. This file is the single source of truth for how the repo is organized and how code is written. It applies to the whole monorepo: read it before adding a feature, and change it only in its own pull request — never inside a feature branch.
 
 ## Project Overview
 
-Smart Desk Assistant is a voice-activated IoT assistant connected to an ESP32 device and a Next.js PWA. It helps users create notes, reminders, and Google Calendar events using voice commands.
+Smart Desk Assistant is a voice-activated IoT desk companion. It uses an ESP32-S3 device, a Next.js PWA, a FastAPI backend, and PostgreSQL.
+
+It helps one primary user create notes, reminders, and Google Calendar events by voice, and it decides whether a reminder should be spoken, shown silently, delayed, or sent to the phone. Decisions use radar presence, Bluetooth phone proximity, calendar state, and user preferences.
 
 Core system flow:
 
@@ -15,16 +17,40 @@ Core system flow:
 5. When information is missing, the backend asks a clarification question and keeps the pending command.
 6. The user's follow-up reply is merged into the pending command to complete its details.
 7. When the parser status is `ready`, the backend performs the action.
-8. The result is stored in Neon PostgreSQL.
+8. The result is stored in PostgreSQL.
 9. The backend sends a response to the ESP32 and PWA.
 10. The context layer decides whether reminders should be spoken, shown silently, delayed, or sent to the mobile app.
 
 The backend is the source of truth for users, notes, reminders, calendar events, context states, notifications, command history, and device data.
 
+## Repository Structure
+
+```text
+smart-desk-assistant/
+├── apps/
+│   ├── api/                 # FastAPI backend (Python, uv)
+│   └── mobile/              # Next.js PWA
+├── firmware/
+│   └── esp32/               # ESP32-S3 firmware (ESP-IDF, PlatformIO, Slint UI)
+├── packages/
+│   ├── shared-types/        # Shared TypeScript types
+│   └── validation/          # Shared validation rules
+├── docs/                    # SRS, architecture, research, testing, hardware
+├── AGENTS.md                # This file: project-wide rules and structure
+├── README.md                # Setup and run instructions for the whole repo
+├── CONTEXT.md               # Product context and constraints
+└── docker-compose.yml       # Local PostgreSQL
+```
+
+Division of responsibility:
+
+- **ESP32** — sensors, display, Bluetooth, Wi-Fi, audio capture/playback, speech-to-text, communication. Nothing else.
+- **Backend** — command parsing, notes, reminders, calendar, context decisions, storage, notifications.
+- **PWA** — user-facing screens and settings. It talks only to the backend API.
+
 ## Tech Stack
 
-- Python
-- FastAPI
+- Python, FastAPI
 - uv for Python dependency and environment management
 - PostgreSQL: Neon in production, Docker Compose Postgres locally (set `DATABASE_URL`)
 - psycopg 3 with a connection pool (`app/db.py`) for database access; plain SQL, no ORM
@@ -44,6 +70,7 @@ uv sync                                       # install dependencies
 uv run uvicorn app.main:app --reload          # run the API (applies migrations on startup)
 uv run yoyo new --sql -m "<name>"             # create a migration
 uv run pytest                                 # run tests
+uv run ruff check app tests                   # lint
 ```
 
 ## Core Rules
@@ -60,9 +87,80 @@ uv run pytest                                 # run tests
 - Do not commit `.env` files, API keys, OAuth tokens, or database URLs.
 - Use environment variables for all credentials and external service configuration.
 - Return clear, user-friendly error messages. Exception: auth redirects to the PWA carry short error codes only (for example `auth_error=access_denied`), never stack traces or raw Google error text.
+- Sign-in is restricted by `ALLOWED_GOOGLE_EMAILS`. An empty value allows any verified Google account and is for development only; set it in production.
 - Add tests for important business rules and failure cases.
 - Prefer simple rule-based context logic in the first version.
 - Do not add camera tracking, emotion detection, multi-user device support, or complex machine learning in the first version. The system has one primary user who signs in with Google; "device ownership" means each device belongs to that user.
+
+## Backend Folder Structure
+
+The backend lives in `apps/api/`. Run all `uv` and `pytest` commands from that folder. Feature modules live in `app/modules/<feature>/` and use `router.py`, `service.py`, `repository.py` and `schemas.py`. Database access is raw SQL through psycopg (`app/db.py`), so there is no `database/` package.
+
+```text
+apps/api/
+├── app/
+│   ├── main.py                    # FastAPI app factory, middleware, router registration
+│   ├── config.py                  # Environment configuration (module-level `settings`)
+│   ├── db.py                      # psycopg pool, get_db dependency, run_migrations
+│   ├── migrations/                # yoyo SQL migrations (+ .rollback.sql files)
+│   │
+│   ├── core/
+│   │   ├── security.py            # Session token and cookie helpers
+│   │   ├── exceptions.py          # Common application errors + handlers
+│   │   └── constants.py           # Context and notification constants
+│   │
+│   ├── routers/
+│   │   └── health.py              # App-level route, not a feature module
+│   │
+│   ├── modules/
+│   │   ├── auth/                  # Google sign-in, app sessions
+│   │   │   ├── router.py
+│   │   │   ├── service.py
+│   │   │   ├── repository.py
+│   │   │   ├── schemas.py
+│   │   │   ├── oauth.py           # Authlib client registration
+│   │   │   └── dependencies.py    # get_current_user
+│   │   │
+│   │   ├── command/               # Rule-based command parser
+│   │   │   ├── router.py
+│   │   │   ├── service.py
+│   │   │   ├── intent.py          # Intent classification rules
+│   │   │   ├── extract.py         # Dates, times, titles, tasks, queries
+│   │   │   ├── clarify.py         # Missing information and questions
+│   │   │   └── schemas.py
+│   │   │
+│   │   ├── notes/                 # Planned
+│   │   ├── reminders/             # Planned
+│   │   ├── calendar/              # Planned (Phase 3, see docs/)
+│   │   ├── context/               # Planned
+│   │   ├── notifications/         # Planned
+│   │   └── device/                # Planned
+│   │
+│   ├── integrations/              # Planned: external API clients only
+│   └── jobs/                      # Planned: scheduled or long-running work
+│
+├── tests/
+│   ├── auth/
+│   └── command/
+│
+├── yoyo.ini                       # yoyo migration settings
+├── pyproject.toml                 # uv/Python dependencies and project configuration
+├── uv.lock                        # Locked dependency versions
+└── .env.example                   # Variable names only, no secrets
+```
+
+## File Responsibilities
+
+- `router.py` — API endpoints only.
+- `service.py` — Business logic and workflow handling.
+- `repository.py` — Database reads and writes only.
+- `schemas.py` — Pydantic request and response models.
+- `intent.py` — Intent classification rules (in the `command` module).
+- `extract.py` — Date, time, and entity extraction from command text (in the `command` module).
+- `clarify.py` — Missing information detection and clarification questions (in the `command` module).
+- `integrations/` — External API clients only.
+- `jobs/` — Scheduled, retried, or long-running background work.
+- `tests/` — Tests for success cases, validation errors, and service failures.
 
 ## Command Parser
 
@@ -76,7 +174,6 @@ uv run pytest                                 # run tests
 - Checklist commands and destructive actions (cancel, delete, snooze) are out of scope and return `unsupported`.
 - Multi-part sentences return `needs_clarification` with `missing: ["single_command"]`; ask for one command at a time.
 - Orchestration duties stay outside the parser: authorization, confirmation, execution, and storage.
-- Files: `intent.py` classifies, `extract.py` pulls dates, times, titles, tasks, and queries, `clarify.py` detects missing information, `service.py` builds slots and merges context.
 
 ## Context States
 
@@ -146,116 +243,6 @@ Never create duplicate calendar events, notes, or reminders when a device retrie
 - If user identity is uncertain, use silent display or delay instead of voice output.
 - If the ESP32 is offline, store the notification and send it when the device reconnects.
 - Do not mark a notification as delivered until delivery is confirmed or recorded.
-
-## Folder Structure
-
-The backend lives in `apps/api/`. Run all `uv` and `pytest` commands from that folder. Feature modules live in `app/modules/<feature>/` and use `router.py`, `service.py`, `repository.py` and `schemas.py`. Database access is raw SQL through psycopg (`app/db.py`), so there is no `database/` package.
-
-```text
-apps/api/
-├── app/
-│   ├── main.py                    # FastAPI app setup and router registration
-│   ├── config.py                  # Environment configuration
-│   ├── dependencies.py            # Shared dependencies
-│   │
-│   ├── core/
-│   │   ├── security.py            # Session token and cookie helpers
-│   │   ├── exceptions.py          # Common application errors
-│   │   ├── constants.py           # Context and notification constants
-│   │   └── logging.py             # Logging setup
-│   │
-│   ├── db.py                      # psycopg connection pool, get_db dependency, run_migrations
-│   ├── migrations/                # yoyo SQL migrations (+ .rollback.sql files)
-│   │
-│   ├── modules/
-│   │   ├── auth/                  # Google sign-in, app sessions (see docs/google-auth-calendar-implementation-workflow.md)
-│   │   │   ├── router.py
-│   │   │   ├── service.py
-│   │   │   ├── repository.py
-│   │   │   └── schemas.py
-│   │   │
-│   │   ├── notes/
-│   │   │   ├── router.py
-│   │   │   ├── service.py
-│   │   │   ├── repository.py
-│   │   │   └── schemas.py
-│   │   │
-│   │   ├── reminders/
-│   │   │   ├── router.py
-│   │   │   ├── service.py
-│   │   │   ├── repository.py
-│   │   │   └── schemas.py
-│   │   │
-│   │   ├── calendar/
-│   │   │   ├── router.py
-│   │   │   ├── service.py
-│   │   │   ├── repository.py
-│   │   │   └── schemas.py
-│   │   │
-│   │   ├── command/
-│   │   │   ├── router.py
-│   │   │   ├── service.py
-│   │   │   ├── intent.py         # Intent classification rules
-│   │   │   ├── extract.py        # Dates, times, titles, tasks, queries
-│   │   │   ├── clarify.py        # Missing information and questions
-│   │   │   └── schemas.py
-│   │   │
-│   │   ├── context/
-│   │   │   ├── router.py
-│   │   │   ├── service.py
-│   │   │   ├── repository.py
-│   │   │   └── schemas.py
-│   │   │
-│   │   ├── notifications/
-│   │   │   ├── router.py
-│   │   │   ├── service.py
-│   │   │   ├── repository.py
-│   │   │   └── schemas.py
-│   │   │
-│   │   └── device/
-│   │       ├── router.py
-│   │       ├── service.py
-│   │       └── schemas.py
-│   │
-│   ├── integrations/
-│   │   ├── google_calendar.py     # Google Calendar API client
-│   │   ├── text_to_speech.py      # Text-to-speech provider client
-│   │   └── ai_provider.py         # Later feature; not used by the first version
-│   │
-│   └── jobs/
-│       ├── reminder_worker.py     # Due reminder processing
-│       ├── calendar_sync.py       # Calendar synchronization
-│       └── context_worker.py      # Context evaluation
-│
-├── tests/
-│   ├── auth/
-│   ├── notes/
-│   ├── reminders/
-│   ├── calendar/
-│   ├── command/
-│   ├── context/
-│   ├── notifications/
-│   └── device/
-│
-├── yoyo.ini                       # yoyo migration settings
-├── pyproject.toml                 # uv/Python dependencies and project configuration
-├── uv.lock                        # Locked dependency versions
-├── .env.example                   # Variable names only, no secrets
-└── README.md                      # Backend setup and run instructions
-```
-
-## File Responsibilities
-
-- `router.py` — API endpoints only.
-- `service.py` — Business logic and workflow handling.
-- `intent.py` — Intent classification rules (in the `command` module).
-- `extract.py` — Date, time, and entity extraction from command text (in the `command` module).
-- `clarify.py` — Missing information detection and clarification questions (in the `command` module).
-- `repository.py` — Database reads and writes only.
-- `schemas.py` — Pydantic request and response models.
-- `integrations/` — External API clients only.
-- `jobs/` — Scheduled, retried, or long-running background work.
-- `tests/` — Tests for success cases, validation errors, and service failures.
 
 ## First Release Scope
 
