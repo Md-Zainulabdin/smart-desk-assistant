@@ -142,9 +142,9 @@ _REMINDER_LEAD = re.compile(
 
 _NOTE_LEAD = re.compile(
     r"^(?:please\s+)?(?:"
-    r"(?:take|make|create|add|write)\s+(?:a\s+|an\s+|the\s+|this\s+|that\s+|down\s+)*notes?"
-    r"|note|notes?|write\s+down|jot\s+down|remember"
-    r")\s*[:,\-]?\s*(?:that|down|this|about)?\s*",
+    r"(?:take|make|create|add|save|write)\s+(?:a\s+|an\s+|the\s+|this\s+|that\s+|down\s+)*notes?"
+    r"|notes?|write\s+down|jot(?:\s+down)?|remember"
+    r")\b\s*(?:[:,\-]\s*|(?:(?:that|down|this|about)\b\s*)?)",
     re.IGNORECASE,
 )
 
