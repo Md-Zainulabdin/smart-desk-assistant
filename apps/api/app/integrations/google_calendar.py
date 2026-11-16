@@ -6,14 +6,12 @@ from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-
 from app.config import settings
 from app.modules.auth.oauth import CALENDAR_EVENTS_SCOPE
 
 logger = logging.getLogger(__name__)
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
-# googleapiclient retries 429/5xx with exponential backoff, this many times.
 NUM_RETRIES = 2
 
 
