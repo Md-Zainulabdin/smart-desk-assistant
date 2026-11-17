@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
@@ -13,6 +15,8 @@ from app.modules.command.router import router as command_router
 from app.modules.notes.router import router as notes_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.routers.health import router as health_router
+
+PLAYGROUND_DIR = Path(__file__).resolve().parent.parent / "playground"
 
 
 @asynccontextmanager
@@ -51,6 +55,10 @@ def create_app() -> FastAPI:
     app.include_router(notes_router)
     app.include_router(calendar_router)
     app.include_router(orchestrator_router)
+
+    # Dev-only test page at "/". Mounted last so every API route above wins.
+    if settings.env == "dev":
+        app.mount("/", StaticFiles(directory=PLAYGROUND_DIR, html=True), name="playground")
     return app
 
 
