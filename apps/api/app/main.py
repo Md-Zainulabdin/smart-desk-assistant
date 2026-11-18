@@ -6,27 +6,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.config import get_settings
+from app.config import settings
 from app.core.exceptions import register_exception_handlers
-from app.core.logging import setup_logging
-from app.database.connection import close_pool, open_pool, run_migrations
+from app.db import pool, run_migrations
 from app.integrations.google_calendar import start_reminder_loop
 from app.modules.auth.router import router as auth_router
 from app.modules.calendar.router import router as calendar_router
-from app.modules.health.router import router as health_router
+from app.modules.command.router import router as command_router
+from app.routers.health import router as health_router
 
 
 def start_reminder_thread() -> None:
     """Desk reminders run in a background thread so FastAPI doesn't freeze."""
-    settings = get_settings()
-    if not (settings.MQTT_HOST and settings.ESP_DEVICE_ID):
+    if not (settings.mqtt_host and settings.esp_device_id):
         logging.getLogger(__name__).warning(
             "Desk reminders are off: set MQTT_HOST and ESP_DEVICE_ID in .env"
         )
         return
     threading.Thread(
         target=start_reminder_loop,
-        args=(settings.ESP_DEVICE_ID,),
+        args=(settings.esp_device_id,),
         name="calendar-reminders",
         daemon=True,
     ).start()
@@ -34,35 +33,37 @@ def start_reminder_thread() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await run_migrations()
-    await open_pool()
-    start_reminder_thread()  # here, not in create_app(): once per server, after migrations
+    run_migrations()
+    pool.open()
+    start_reminder_thread()  # once per server, after migrations
     yield
-    await close_pool()
+    pool.close()
 
 
 def create_app() -> FastAPI:
-    setup_logging()
-    settings = get_settings()
-    app = FastAPI(title="desk-api", lifespan=lifespan)
+    app = FastAPI(title="Smart Desk Assistant API", lifespan=lifespan)
     register_exception_handlers(app)
-    # Login cookie: holds only user_id (signed, not encrypted), never tokens.
+
+    # Short-lived cookie for the OAuth handshake only (state + nonce), not the app session.
     app.add_middleware(
         SessionMiddleware,
-        secret_key=settings.SESSION_SECRET,
-        session_cookie="sd_session",
+        secret_key=settings.session_secret,
+        session_cookie="sd_oauth",
         same_site="lax",
-        https_only=False,
-        max_age=30 * 24 * 3600,
+        https_only=settings.cookie_secure,
+        max_age=600,
     )
+    # Added last so CORS is the outermost layer.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.PWA_ORIGIN],
+        allow_origins=[settings.pwa_origin],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
     )
+
     app.include_router(health_router)
+    app.include_router(command_router)
     app.include_router(auth_router)
     app.include_router(calendar_router)
     return app

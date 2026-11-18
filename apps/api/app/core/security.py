@@ -1,25 +1,38 @@
-import uuid
+import hashlib
+import secrets
 
-from starlette.requests import Request
+from fastapi import Response
 
-# Auth uses a signed session cookie (SessionMiddleware) that holds only the user id.
-# Tokens never go in the cookie.
-SESSION_USER_KEY = "user_id"
+from app.config import settings
+    
 
-
-def start_session(request: Request, user_id: uuid.UUID) -> None:
-    request.session.clear()
-    request.session[SESSION_USER_KEY] = str(user_id)
-
-
-def end_session(request: Request) -> None:
-    request.session.clear()
+def new_session_token() -> str:
+    """A random opaque token. The raw value goes only into the cookie."""
+    return secrets.token_urlsafe(32)
 
 
-def session_user_id(request: Request) -> uuid.UUID | None:
-    """The signed-in user's id, or None if missing or malformed."""
-    value = request.session.get(SESSION_USER_KEY)
-    try:
-        return uuid.UUID(value) if value else None
-    except ValueError:
-        return None
+def hash_token(raw_token: str) -> bytes:
+    """The database stores only this hash, never the raw token."""
+    return hashlib.sha256(raw_token.encode()).digest()
+
+
+def set_session_cookie(response: Response, raw_token: str) -> None:
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=raw_token,
+        max_age=settings.session_ttl_days * 24 * 60 * 60,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        path="/",
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        path="/",
+    )

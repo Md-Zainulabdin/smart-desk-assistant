@@ -2,6 +2,5 @@
   "files.exclude": {
     "**/__init__.py": true,
     "**/__pycache__": true
-  },
-  "cmake.sourceDirectory": "E:/SE CEP/smart-desk-assistant/firmware/esp32"
+  }
 }

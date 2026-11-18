@@ -1,18 +1,12 @@
 import uuid
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 
 class UserOut(BaseModel):
-    """A user as the API returns it. Deliberately has no refresh_token field."""
-
-    model_config = ConfigDict(from_attributes=True)
+    """What the API returns about a user. Never includes google_sub or tokens."""
 
     id: uuid.UUID
     email: str
     name: str | None
     picture_url: str | None
-
-
-class LogoutOut(BaseModel):
-    ok: bool

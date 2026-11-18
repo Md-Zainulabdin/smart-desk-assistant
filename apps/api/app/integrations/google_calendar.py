@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import math
@@ -7,26 +6,26 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import asyncpg
 import paho.mqtt.client as mqtt
+import psycopg
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from psycopg.rows import dict_row
 
-from app.config import get_settings
-from app.modules.auth.repository import latest_refresh_token
+from app.config import settings
+from app.modules.calendar.repository import latest_refresh_token
 from app.modules.calendar.schemas import MeetingIn
 
 logger = logging.getLogger(__name__)
 
 
 def calendar_service(refresh_token: str):
-    settings = get_settings()
     credentials = Credentials(
         token=None,
         refresh_token=refresh_token,
-        client_id=settings.GOOGLE_CLIENT_ID,
-        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
         token_uri="https://oauth2.googleapis.com/token",
     )
     service = build("calendar", "v3", credentials=credentials, cache_discovery=False)
@@ -77,16 +76,9 @@ def save_sent(sent: set[str]) -> None:
 
 
 def read_refresh_token() -> str | None:
-    """The token saved by the latest Google sign-in. Runs in the loop's own thread."""
-
-    async def fetch() -> str | None:
-        conn = await asyncpg.connect(get_settings().DATABASE_URL)
-        try:
-            return await latest_refresh_token(conn)
-        finally:
-            await conn.close()
-
-    return asyncio.run(fetch())
+    """The newest saved Google refresh token. Runs in the loop's own thread, with its own connection."""
+    with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+        return latest_refresh_token(conn)
 
 
 def on_mqtt_connect(client, userdata, flags, reason_code, properties) -> None:
@@ -101,17 +93,16 @@ def on_mqtt_disconnect(client, userdata, flags, reason_code, properties) -> None
 
 
 def connect_mqtt() -> mqtt.Client:
-    settings = get_settings()
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2, client_id=f"desk-backend-{uuid.uuid4().hex[:6]}"
     )
     client.tls_set()
-    if settings.MQTT_USERNAME:  # public brokers take no login
-        client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
+    if settings.mqtt_username:  # public brokers take no login
+        client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
     client.on_connect = on_mqtt_connect
     client.on_disconnect = on_mqtt_disconnect
     # connect_async + loop_start: keeps (re)connecting in the background instead of raising.
-    client.connect_async(settings.MQTT_HOST, settings.MQTT_PORT)
+    client.connect_async(settings.mqtt_host, settings.mqtt_port)
     client.loop_start()
     return client
 

@@ -1,31 +1,38 @@
-from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# apps/api/.env, found no matter which folder the server is started from.
-ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
+    model_config = SettingsConfigDict(env_file=ROOT_DIR / ".env", extra="ignore")
 
-    ENV: str = "dev"
-    DATABASE_URL: str = ""
-    GROQ_API_KEY: str = ""
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = ""
-    SESSION_SECRET: str = ""
-    PWA_ORIGIN:str =""
-    ALLOWED_GOOGLE_EMAILS: str = ""
-    MQTT_HOST: str = ""
-    MQTT_PORT: int = 8883
-    MQTT_USERNAME: str = ""
-    MQTT_PASSWORD: str = ""
-    ESP_DEVICE_ID: str = ""
+    env: str = "dev"
+    default_timezone: str = "UTC"
+    groq_api_key: str = ""
+
+    google_client_id: str
+    google_client_secret: str
+    google_redirect_uri: str
+    # Comma-separated allowlist. Empty means any verified Google account (development only).
+    allowed_google_emails: str = ""
+
+    session_secret: str
+    session_ttl_days: int = 30
+    session_cookie_name: str = "sd_session"
+    cookie_secure: bool = False
+
+    database_url: str
+    pwa_origin: str = "http://localhost:3000"
+    api_base_url: str = "http://localhost:8000"
+
+    # Desk reminders: the backend publishes to the ESP over MQTT. Empty host turns them off.
+    mqtt_host: str = ""
+    mqtt_port: int = 8883
+    mqtt_username: str = ""
+    mqtt_password: str = ""
+    esp_device_id: str = ""
 
 
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
+settings = Settings()

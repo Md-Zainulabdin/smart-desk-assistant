@@ -1,35 +1,40 @@
-import logging
-
-import asyncpg
-
-from app.config import get_settings
-from app.database.models import User
-from app.modules.auth.repository import save_google_user
-
-logger = logging.getLogger(__name__)
+from app.config import settings
+from app.modules.auth import repository
 
 
 class SignInRejected(Exception):
-    """The Google account may not sign in; `reason` is the code sent to the PWA."""
+    """Sign-in refused. `code` is the short reason sent to the PWA."""
 
-    def __init__(self, reason: str):
-        super().__init__(reason)
-        self.reason = reason
-
-
-def allowed_emails() -> set[str]:
-    raw = get_settings().ALLOWED_GOOGLE_EMAILS
-    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
-async def sign_in_google_user(db: asyncpg.Connection, token: dict) -> User:
-    """Check the Google account against the allowlist and save it."""
-    info = token.get("userinfo") or {}
-    email = (info.get("email") or "").lower()
-    if not info.get("email_verified") or email not in allowed_emails():
-        logger.info("Google sign-in rejected: account not allowed")
+def _is_allowed(email: str) -> bool:
+    """Enforce ALLOWED_GOOGLE_EMAILS. An empty allowlist allows any verified account."""
+    allowed = [e.strip().lower() for e in settings.allowed_google_emails.split(",") if e.strip()]
+    return not allowed or email.lower() in allowed
+
+
+def sign_in_with_google(conn, claims: dict, user_agent: str | None, old_token: str | None = None) -> str:
+    """Create or find the user for verified Google claims and return a new session token."""
+    sub = claims.get("sub")
+    email = claims.get("email")
+    if not sub or not email:
+        raise SignInRejected("google_error")
+    if claims.get("email_verified") is not True:
+        raise SignInRejected("email_unverified")
+    if not _is_allowed(email):
         raise SignInRejected("not_allowed")
 
-    user = await save_google_user(db, info, token.get("refresh_token"))
-    logger.info("Google sign-in succeeded for user %s", user.id)
-    return user
+    user = repository.upsert_google_user(
+        conn, sub, email, True, claims.get("name"), claims.get("picture")
+    )
+    if old_token:
+        repository.revoke_session(conn, old_token)
+    return repository.create_session(conn, user["id"], user_agent)
+
+
+def sign_out(conn, raw_token: str | None) -> None:
+    if raw_token:
+        repository.revoke_session(conn, raw_token)
