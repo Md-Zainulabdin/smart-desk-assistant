@@ -18,16 +18,22 @@
 //    UPLOAD    "Transcribing"  purple orb + dots
 //    result    "You said"      transcript (8 s), then back to Home
 //    errors    red orb         message (4 s), then back to Home
+//    reminder  "Meeting"       countdown ring + title, spoken, kept up 60 s,
+//                              then Home with the reminder card
 //
 //  Serial: DUMP | TONE | HEAP | SET SIL <ms> | SET WAKE <0.4-0.9999> | SET GAIN <x>
 //  BOOT button: hold to record (manual session, ends on release);
-//               press while a reminder is speaking to stop it;
+//               press on the reminder screen (speaking or not) to dismiss it;
 //               press on Home while a reminder card shows to dismiss it.
+//  "Jarvis" on the reminder screen (speaking or not) dismisses it too.
+//  "Jarvis" -> "clear reminder" (or "dismiss", "done"...) clears the Home card.
 //
 //  MQTT topics (<id> = last 3 MAC bytes, e.g. cee330):
 //    jarvis/<id>/transcript  QoS 1  {"device","id","text","audio_ms"}
 //    jarvis/<id>/status      retained "online" / "offline" (Last Will)
-//    jarvis/<id>/reminder    subscribed: {"text","id"} or plain text -> spoken
+//    jarvis/<id>/reminder    subscribed: {"text","id"} or plain text -> reminder
+//                            screen + spoken. Optional: "title", "at" ("10:00"),
+//                            "starts_at" (unix s, drives the live countdown)
 //    jarvis/<id>/response    subscribed: same, for backend replies
 //
 //  Speech out: Groq Orpheus TTS (voice "diana", <=200 chars per request) ->
@@ -40,6 +46,7 @@
 //  Needs flashed: srmodels.bin (wn9_jarvis_tts) in the "model" partition.
 // =============================================================================
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -119,6 +126,7 @@
 #define TTS_BUF_BYTES    (1024 * 1024)     // PSRAM stream buffer, ~21 s at 24 kHz
 #define TTS_PREBUFFER_MS 500               // audio piled up before playback (re)starts
 #define TTS_QUEUE_LEN    8                 // messages waiting to be spoken
+#define REMINDER_HOLD_MS 60000             // reminder screen stays up after speaking, then Home
 
 #define CLOCK_TZ   "PKT-5"         // POSIX TZ string: Pakistan, UTC+5
 #define CLOCK_NTP  "pool.ntp.org"
@@ -148,6 +156,8 @@ static volatile uint32_t silenceEndMs = SILENCE_END_MS;
 static volatile float micGain = MIC_GAIN;
 static volatile float pendingWake = 0;
 static volatile bool manualWake = false;
+// Diagnostics for "Ringbuffer of AFE is empty": is the mic silent, or is feedTask stuck?
+static std::atomic<uint32_t> feedFrames { 0 }, micTimeouts { 0 };
 static volatile bool dumping = false;
 static volatile bool wifiUp = false;
 static volatile bool mqttUp = false;
@@ -176,6 +186,8 @@ static std::atomic<uint32_t> uiGen { 0 }; // bumps on every screen change
 static std::atomic<bool> onHome { false };    // Home screen is showing
 static std::atomic<bool> cardShown { false }; // a reminder card is on Home
 static uint32_t cardAtMs = 0;                 // when it arrived (event loop only)
+static std::atomic<bool> onReminder { false }; // the full-screen reminder is showing
+static int64_t alertStartsAt = 0;             // meeting start, unix s, 0 = unknown (event loop only)
 
 static void showIdle();
 
@@ -188,6 +200,7 @@ static void ui(AssistantState s, const char *status, std::string text, uint32_t 
         auto h = g_ui.lock();
         if (!h) return;
         onHome = s == AssistantState::Home;
+        onReminder = false;
         (*h)->set_assistant_state(s);
         (*h)->set_status_text(status);
         (*h)->set_transcript(slint::SharedString(text));
@@ -211,6 +224,40 @@ static void uiReminder(std::string text)
         if (auto h = g_ui.lock()) {
             (*h)->set_reminder_text(slint::SharedString(text));
             (*h)->set_reminder_ago("now");
+        }
+    });
+}
+
+// Minutes until the meeting starts (rounded up), or -1 if unknown. Event loop only.
+static int alertMinutesLeft()
+{
+    const time_t now = time(nullptr);
+    if (alertStartsAt <= 0 || now < 1700000000) return -1; // no start time, or clock not synced
+    const int64_t secs = alertStartsAt - (int64_t)now;
+    return secs <= 0 ? 0 : (int)((secs + 59) / 60);
+}
+
+// Thread-safe. Shows the full-screen meeting reminder. revertMs > 0 returns
+// to Home later, unless something else changed the screen in the meantime.
+static void uiAlert(std::string title, std::string startTime, int64_t startsAt, bool speaking,
+                    uint32_t revertMs = 0)
+{
+    const uint32_t gen = ++uiGen;
+    slint::invoke_from_event_loop([=, title = std::move(title), startTime = std::move(startTime)] {
+        auto h = g_ui.lock();
+        if (!h) return;
+        onHome = false;
+        onReminder = true;
+        alertStartsAt = startsAt;
+        (*h)->set_alert_title(slint::SharedString(title));
+        (*h)->set_alert_time(slint::SharedString(startTime));
+        (*h)->set_alert_minutes(alertMinutesLeft());
+        (*h)->set_alert_speaking(speaking);
+        (*h)->set_assistant_state(AssistantState::Reminder);
+        if (revertMs) {
+            slint::Timer::single_shot(std::chrono::milliseconds(revertMs), [gen] {
+                if (uiGen == gen && state == ST_IDLE) showIdle();
+            });
         }
     });
 }
@@ -244,6 +291,7 @@ static void clockTick()
         else if (min > 0) snprintf(a, sizeof a, "%um ago", (unsigned)min);
         (*h)->set_reminder_ago(a);
     }
+    if (onReminder) (*h)->set_alert_minutes(alertMinutesLeft());
 }
 
 static void uiLevel(float v)
@@ -384,6 +432,18 @@ static void writeWavHeader(uint8_t *h, uint32_t dataBytes)
 }
 
 // =================================================================== WIFI ====
+// The MQTT task needs a 6 KB block of internal RAM for its stack. Once all
+// tasks run, internal RAM is too fragmented for that, so setupTask starts the
+// client right after the mic tasks, before Wi-Fi is up: it keeps retrying the
+// connection on its own. Called again on every IP in case that first start failed.
+static void mqttStart()
+{
+    static std::atomic<bool> started { false };
+    if (!mqtt || started) return;
+    started = esp_mqtt_client_start(mqtt) == ESP_OK;
+    if (!started) logHeap("mqtt start failed");
+}
+
 static void wifiEvent(void *, esp_event_base_t base, int32_t id, void *)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -398,8 +458,7 @@ static void wifiEvent(void *, esp_event_base_t base, int32_t id, void *)
         printf("[wifi] connected, rssi %d\n", ap.rssi);
         wifiUp = true;
         uiWifi(true);
-        static bool mqttStarted = false; // the client reconnects on its own after this
-        if (mqtt && !mqttStarted) mqttStarted = esp_mqtt_client_start(mqtt) == ESP_OK;
+        mqttStart();
     }
 }
 
@@ -515,8 +574,10 @@ static void mqttInit()
     mc.broker.address.uri = MQTT_URI;
     mc.broker.verification.crt_bundle_attach = esp_crt_bundle_attach; // HiveMQ uses Let's Encrypt
     mc.credentials.client_id = mqttClientId;
-    mc.credentials.username = SEED_MQTT_USER;
-    mc.credentials.authentication.password = SEED_MQTT_PASS;
+    if (SEED_MQTT_USER[0]) { // public brokers take no login
+        mc.credentials.username = SEED_MQTT_USER;
+        mc.credentials.authentication.password = SEED_MQTT_PASS;
+    }
     mc.session.keepalive = 30;
     mc.session.last_will.topic = topicStatus;
     mc.session.last_will.msg = "offline";
@@ -631,7 +692,13 @@ static int uploadToGroq(std::string *text)
 // ttsPlayTask plays from the buffer, so the next piece arrives during playback.
 // Playback starts once TTS_PREBUFFER_MS is buffered, and on an underrun it
 // pauses to re-buffer instead of stuttering.
-struct TtsMsg { std::string text; const char *title; };
+// meeting / startTime / startsAt: optional reminder fields for the reminder screen.
+struct TtsMsg {
+    std::string text;
+    const char *title;
+    std::string meeting, startTime;
+    int64_t startsAt = 0;
+};
 
 static QueueHandle_t ttsQueue = nullptr;
 static StreamBufferHandle_t ttsStream = nullptr;
@@ -644,13 +711,21 @@ static std::atomic<bool> ttsStop { false }; // BOOT pressed: abort playback
 // Runs in the MQTT task. Payload: {"text":"...","id":"..."} or plain text.
 static void ttsEnqueue(const std::string &topic, const std::string &payload)
 {
-    std::string text = payload, id;
+    std::string text = payload, id, meeting, startTime;
+    int64_t startsAt = 0;
     if (cJSON *j = cJSON_ParseWithLength(payload.data(), payload.size())) {
         if (cJSON_IsObject(j)) {
             const cJSON *t = cJSON_GetObjectItem(j, "text");
             const cJSON *i = cJSON_GetObjectItem(j, "id");
             text = cJSON_IsString(t) ? t->valuestring : "";
             if (cJSON_IsString(i)) id = i->valuestring;
+            // Optional, for the reminder screen: {"title","at":"10:00","starts_at":<unix s>}
+            const cJSON *mt = cJSON_GetObjectItem(j, "title");
+            const cJSON *at = cJSON_GetObjectItem(j, "at");
+            const cJSON *sa = cJSON_GetObjectItem(j, "starts_at");
+            if (cJSON_IsString(mt)) meeting = mt->valuestring;
+            if (cJSON_IsString(at)) startTime = at->valuestring;
+            if (cJSON_IsNumber(sa)) startsAt = (int64_t)sa->valuedouble;
         }
         cJSON_Delete(j);
     }
@@ -665,7 +740,8 @@ static void ttsEnqueue(const std::string &topic, const std::string &payload)
     if (text.size() > TTS_MAX_MSG) text.resize(TTS_MAX_MSG);
 
     const bool reminder = topic.size() >= 9 && topic.compare(topic.size() - 9, 9, "/reminder") == 0;
-    auto *m = new TtsMsg { std::move(text), reminder ? "Reminder" : "Jarvis" };
+    auto *m = new TtsMsg { std::move(text), reminder ? "Reminder" : "Jarvis",
+                           std::move(meeting), std::move(startTime), startsAt };
     printf("[mqtt] %s received (%u chars)\n", m->title, (unsigned)m->text.size());
     if (!ttsQueue || xQueueSend(ttsQueue, &m, 0) != pdTRUE) {
         printf("[tts] %s, message dropped\n", ttsQueue ? "queue full" : "disabled");
@@ -856,7 +932,11 @@ static void ttsFetchTask(void *)
 
         printf("[tts] %s: %s\n", m->title, m->text.c_str());
         logHeap("before speech");
-        ui(AssistantState::Speaking, m->title, m->text);
+        const bool isReminder = strcmp(m->title, "Reminder") == 0;
+        // Without a "title" field the whole message is shown as the title.
+        const std::string alertTitle = m->meeting.empty() ? m->text : m->meeting;
+        if (isReminder) uiAlert(alertTitle, m->startTime, m->startsAt, true);
+        else            ui(AssistantState::Speaking, m->title, m->text);
         xStreamBufferReset(ttsStream); // safe: ttsPlayTask is waiting for its notify
         ttsRate = 0;
         ttsDone = false;
@@ -882,13 +962,25 @@ static void ttsFetchTask(void *)
         ttsDone = true;
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // ttsPlayTask has drained the buffer
 
-        state = ST_IDLE;
-        const bool isReminder = strcmp(m->title, "Reminder") == 0;
-        if (isReminder) uiReminder(m->text); // stays on the Home card, even if speech failed
-        if (ttsStop)           { printf("[tts] stopped\n"); showIdle(); }
-        else if (!err.empty()) { printf("[tts] failed: %s\n", err.c_str()); ui(AssistantState::Error, "Error", err, 4000); }
-        else if (isReminder)   showIdle();
-        else                   ui(AssistantState::Idle, m->title, m->text, 6000);
+        if (isReminder) {
+            // Screen updates go out before state = ST_IDLE, so a wake word
+            // right after this still gets the screen.
+            if (!err.empty()) printf("[tts] failed: %s (reminder still shown)\n", err.c_str());
+            if (ttsStop) {
+                printf("[tts] stopped, reminder dismissed\n");
+                uiReminder("");
+                showIdle();
+            } else {
+                uiReminder(m->text); // stays on the Home card afterwards
+                uiAlert(alertTitle, m->startTime, m->startsAt, false, REMINDER_HOLD_MS);
+            }
+            state = ST_IDLE;
+        } else {
+            state = ST_IDLE;
+            if (ttsStop)           { printf("[tts] stopped\n"); showIdle(); }
+            else if (!err.empty()) { printf("[tts] failed: %s\n", err.c_str()); ui(AssistantState::Error, "Error", err, 4000); }
+            else                   ui(AssistantState::Idle, m->title, m->text, 6000);
+        }
         delete m;
         printf("[idle] say \"Jarvis\"...\n");
     }
@@ -934,8 +1026,9 @@ static void ttsInit()
     QueueHandle_t q = ttsStream && speakerOk ? xQueueCreate(TTS_QUEUE_LEN, sizeof(TtsMsg *)) : nullptr;
     if (!q) { printf("[tts] disabled\n"); return; }
     ttsQueue = q;
-    xTaskCreatePinnedToCore(ttsPlayTask, "ttsPlay", 4096, nullptr, 4, &ttsPlayH, 0);
-    // Network-only task (TLS, no flash writes): its stack can live in PSRAM
+    // Neither task touches flash, so both stacks can live in PSRAM
+    xTaskCreatePinnedToCoreWithCaps(ttsPlayTask, "ttsPlay", 4096, nullptr, 4, &ttsPlayH, 0,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     xTaskCreatePinnedToCoreWithCaps(ttsFetchTask, "ttsFetch", 12288, nullptr, 3, &ttsFetchH, 0,
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
@@ -959,7 +1052,8 @@ static void feedTask(void *)
         size_t got = 0;
         while (got < rawBytes) {
             size_t n = 0;
-            i2s_channel_read(micRx, (uint8_t *)raw + got, rawBytes - got, &n, portMAX_DELAY);
+            if (i2s_channel_read(micRx, (uint8_t *)raw + got, rawBytes - got, &n, pdMS_TO_TICKS(1000)) == ESP_ERR_TIMEOUT)
+                micTimeouts++;
             got += n;
         }
         for (int i = 0; i < chunk; i++) {
@@ -968,6 +1062,7 @@ static void feedTask(void *)
             for (int c = 1; c < chans; c++) feed[i * chans + c] = 0;   // N = unused
         }
         afe->feed(afeData, feed);
+        feedFrames++;
     }
 }
 
@@ -1005,8 +1100,31 @@ static void fetchTask(void *)
         }
 
         afe_fetch_result_t *res = afe->fetch_with_delay(afeData, pdMS_TO_TICKS(200));
-        if (!res || res->ret_value == ESP_FAIL) continue;
+        if (!res || res->ret_value == ESP_FAIL) {
+            static uint32_t lastReportMs = 0;
+            if (millis() - lastReportMs >= 3000) {
+                lastReportMs = millis();
+                printf("[feed] AFE starved: state %d, frames fed %u, mic timeouts %u\n", (int)state,
+                       (unsigned)feedFrames, (unsigned)micTimeouts);
+                logHeap("starved");
+            }
+            continue;
+        }
         const int samples = res->data_size / 2;
+
+        // "Jarvis" on a reminder means "got it": dismiss it like BOOT does.
+        // While it's being spoken, ttsFetchTask clears the screen and card once it stops.
+        if (onReminder && res->wakeup_state != WAKENET_NO_DETECT) {
+            if (state == ST_SPEAKING) {
+                printf("[wake] Jarvis on reminder - stopping it\n");
+                ttsStop = true;
+            } else if (state == ST_IDLE) {
+                printf("[wake] Jarvis on reminder - dismissed\n");
+                uiReminder("");
+                showIdle();
+            }
+            continue;
+        }
 
         if (state == ST_IDLE) {
             bool wake = res->wakeup_state != WAKENET_NO_DETECT;
@@ -1095,6 +1213,24 @@ static void fetchTask(void *)
 }
 
 // uploadTask: the slow network part, so the mic/AFE never stall.
+// "clear reminder", "dismiss", "done", "got it"... Short phrases only, so a real
+// command like "clear my afternoon tomorrow" still goes to the backend.
+static bool isDismissCommand(const std::string &said)
+{
+    std::string s; // lowercase words, punctuation dropped
+    for (char c : said) {
+        if (isalpha((unsigned char)c)) s += (char)tolower((unsigned char)c);
+        else if (!s.empty() && s.back() != ' ') s += ' ';
+    }
+    while (!s.empty() && s.back() == ' ') s.pop_back();
+    if (std::count(s.begin(), s.end(), ' ') >= 3) return false; // 4+ words: a command
+    for (const char *w : { "clear", "dismiss", "remove", "delete" })
+        if (s.find(w) != std::string::npos) return true;
+    for (const char *p : { "done", "got it", "ok", "okay", "thanks", "thank you" })
+        if (s == p) return true;
+    return false;
+}
+
 static void uploadTask(void *)
 {
     for (;;) {
@@ -1106,9 +1242,16 @@ static void uploadTask(void *)
         if (status == 200 && !text.empty()) {
             printf("-------------------------------------------\nYou said: %s\n"
                    "-------------------------------------------\n\n", text.c_str());
-            mqttPublishTranscript(text, (uint32_t)(recBytes / (SAMPLE_RATE * 2 / 1000)));
-            state = ST_IDLE;
-            ui(AssistantState::Idle, "You said", "\"" + text + "\"", 8000);
+            if (cardShown && isDismissCommand(text)) { // handled here, not sent to the backend
+                printf("[voice] reminder card dismissed\n");
+                uiReminder("");
+                state = ST_IDLE;
+                ui(AssistantState::Idle, "Done", "Reminder cleared", 2500);
+            } else {
+                mqttPublishTranscript(text, (uint32_t)(recBytes / (SAMPLE_RATE * 2 / 1000)));
+                state = ST_IDLE;
+                ui(AssistantState::Idle, "You said", "\"" + text + "\"", 8000);
+            }
         } else {
             std::string msg;
             if (!wifiUp)            msg = "No Wi-Fi connection";
@@ -1246,7 +1389,8 @@ static void buttonTask(void *)
             if (buttonLowSince == 0) buttonLowSince = millis();
             if (buttonArmed && millis() - buttonLowSince >= 30) {
                 if (state == ST_IDLE) {
-                    if (onHome && cardShown) uiReminder(""); // dismiss the reminder card
+                    if (onReminder) { uiReminder(""); showIdle(); } // dismiss screen + card
+                    else if (onHome && cardShown) uiReminder(""); // dismiss the reminder card
                     else manualWake = true;
                 } else if (state == ST_SPEAKING) ttsStop = true; // BOOT interrupts a reminder
                 buttonArmed = false; // one trigger per physical press
@@ -1317,17 +1461,24 @@ static void setupTask(void *)
         nvs_flash_init();
     }
     ttsInit();  // before MQTT: incoming messages need the queue
-    mqttInit(); // before Wi-Fi: the first IP event starts the client
+    mqttInit(); // before Wi-Fi: incoming messages need the client set up
     wifiStart();
 
-    // Network-only task (TLS, no flash writes): its stack can live in PSRAM
-    xTaskCreatePinnedToCoreWithCaps(uploadTask, "upload", 16384, nullptr, 3, &uploadTaskH, 0,
-                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    xTaskCreatePinnedToCore(speakerTask, "speaker", 4096, nullptr, 3, &speakerTaskH, 0);
-    xTaskCreatePinnedToCore(fetchTask, "fetch", 8192, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(feedTask, "feed", 6144, nullptr, 5, nullptr, 0);
-    xTaskCreatePinnedToCore(consoleTask, "console", 4096, nullptr, 2, nullptr, 1);
-    xTaskCreatePinnedToCore(buttonTask, "button", 2048, nullptr, 2, nullptr, 1);
+    // Internal RAM is tight: a failed task create must not go unnoticed.
+    auto check = [](BaseType_t ok, const char *name) {
+        if (ok != pdPASS) { printf("[task] %s: not enough memory\n", name); logHeap(name); }
+    };
+    // Stacks that never touch flash live in PSRAM: network (upload), speaker
+    // output and input polling. The wake-word path (fetch, feed) stays internal.
+    const uint32_t psram = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    check(xTaskCreatePinnedToCoreWithCaps(uploadTask, "upload", 16384, nullptr, 3, &uploadTaskH, 0, psram), "upload");
+    check(xTaskCreatePinnedToCoreWithCaps(speakerTask, "speaker", 4096, nullptr, 3, &speakerTaskH, 0, psram), "speaker");
+    // Mic first, MQTT after: the device is useless without the wake word
+    check(xTaskCreatePinnedToCore(fetchTask, "fetch", 8192, nullptr, 5, nullptr, 1), "fetch");
+    check(xTaskCreatePinnedToCore(feedTask, "feed", 6144, nullptr, 5, nullptr, 0), "feed");
+    mqttStart(); // its 6 KB internal stack, before the heap fragments further
+    check(xTaskCreatePinnedToCoreWithCaps(consoleTask, "console", 4096, nullptr, 2, nullptr, 1, psram), "console");
+    check(xTaskCreatePinnedToCoreWithCaps(buttonTask, "button", 2048, nullptr, 2, nullptr, 1, psram), "button");
 
     printf("\nReady. Say \"Jarvis\", then your command. Silence for %u ms ends it.\n",
            (unsigned)silenceEndMs);

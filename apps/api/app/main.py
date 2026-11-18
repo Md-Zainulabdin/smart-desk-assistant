@@ -1,3 +1,5 @@
+import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,15 +10,33 @@ from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import setup_logging
 from app.database.connection import close_pool, open_pool, run_migrations
+from app.integrations.google_calendar import start_reminder_loop
 from app.modules.auth.router import router as auth_router
 from app.modules.calendar.router import router as calendar_router
 from app.modules.health.router import router as health_router
+
+
+def start_reminder_thread() -> None:
+    """Desk reminders run in a background thread so FastAPI doesn't freeze."""
+    settings = get_settings()
+    if not (settings.MQTT_HOST and settings.ESP_DEVICE_ID):
+        logging.getLogger(__name__).warning(
+            "Desk reminders are off: set MQTT_HOST and ESP_DEVICE_ID in .env"
+        )
+        return
+    threading.Thread(
+        target=start_reminder_loop,
+        args=(settings.ESP_DEVICE_ID,),
+        name="calendar-reminders",
+        daemon=True,
+    ).start()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await run_migrations()
     await open_pool()
+    start_reminder_thread()  # here, not in create_app(): once per server, after migrations
     yield
     await close_pool()
 

@@ -1,0 +1,51 @@
+// Preview only: reminder screen states to check in the Slint preview.
+// Not part of the firmware build (slint_build.py only reads src/ui/).
+
+import { ReminderScreen } from "../src/ui/reminder.slint";
+
+// Arrived, being read aloud
+export component Speaking inherits Window {
+    width: 128px;
+    height: 160px;
+
+    ReminderScreen {
+        title: "Standup with the design team";
+        start-time: "10:00";
+        minutes: 10;
+        speaking: true;
+    }
+}
+
+// After speaking: countdown keeps running, BOOT hint
+export component Waiting inherits Window {
+    width: 128px;
+    height: 160px;
+
+    ReminderScreen {
+        title: "FYP supervisor meeting in the lab";
+        start-time: "14:30";
+        minutes: 3;
+    }
+}
+
+// Meeting starting
+export component StartingNow inherits Window {
+    width: 128px;
+    height: 160px;
+
+    ReminderScreen {
+        title: "Standup";
+        start-time: "10:00";
+        minutes: 0;
+    }
+}
+
+// Old payload ({"id","text"} only): no title/time, the whole text is shown
+export component TextOnly inherits Window {
+    width: 128px;
+    height: 160px;
+
+    ReminderScreen {
+        title: "Standup at 10:00, in 10 minutes";
+    }
+}

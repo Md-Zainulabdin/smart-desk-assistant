@@ -7,6 +7,9 @@ node_modules/
 !.env.example
 *.pem
 *.key
+# desk reminder loop: ids of reminders already sent
+apps/api/sent.json
+apps/api/sent.tmp
 
 # next.js
 .next/

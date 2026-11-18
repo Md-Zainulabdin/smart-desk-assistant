@@ -2,9 +2,11 @@
 // Preview on your PC with the Slint VS Code extension before flashing.
 
 import { HomeScreen } from "home.slint";
+import { ReminderScreen } from "reminder.slint";
 
-// home = clock + reminder card; every other state shows the Jarvis screen
-export enum AssistantState { home, idle, listening, thinking, speaking, error }
+// home = clock + reminder card; reminder = full-screen meeting reminder;
+// every other state shows the Jarvis screen
+export enum AssistantState { home, idle, listening, thinking, speaking, error, reminder }
 
 // ---------- The animated "orb" in the middle of the screen ----------
 component Orb inherits Rectangle {
@@ -97,6 +99,12 @@ export component AppWindow inherits Window {
     in property <string> reminder-text; // empty = no card
     in property <string> reminder-ago;
 
+    // Reminder screen
+    in property <string> alert-title;
+    in property <string> alert-time;
+    in property <int> alert-minutes: -1;
+    in property <bool> alert-speaking;
+
     property <color> accent: assistant-state == AssistantState.listening ? #2ec4ff
         : assistant-state == AssistantState.thinking ? #b388ff
         : assistant-state == AssistantState.speaking ? #3ddc97
@@ -111,9 +119,16 @@ export component AppWindow inherits Window {
         reminder-ago: root.reminder-ago;
     }
 
-    // Jarvis screen. Created only while not on Home, so its animations
-    // stop (and the CPU sleeps) while the clock is showing.
-    if root.assistant-state != AssistantState.home: Rectangle {
+    if root.assistant-state == AssistantState.reminder: ReminderScreen {
+        title: root.alert-title;
+        start-time: root.alert-time;
+        minutes: root.alert-minutes;
+        speaking: root.alert-speaking;
+    }
+
+    // Jarvis screen. Created only while not on Home or the reminder, so its
+    // animations stop (and the CPU sleeps) while the clock is showing.
+    if root.assistant-state != AssistantState.home && root.assistant-state != AssistantState.reminder: Rectangle {
         width: 128px;
         height: 160px;
 

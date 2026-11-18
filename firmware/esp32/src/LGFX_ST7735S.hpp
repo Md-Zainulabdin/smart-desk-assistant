@@ -40,7 +40,7 @@ public:
       cfg.offset_rotation  = 0;
       cfg.readable         = false;
       cfg.invert           = false;  // Toggle if colors look inverted
-      cfg.rgb_order        = false;  // Toggle if red/blue are swapped
+      cfg.rgb_order        = true;   // Toggle if red/blue are swapped (this panel is BGR)
       cfg.dlen_16bit       = false;
       cfg.bus_shared       = false;
       _panel.config(cfg);

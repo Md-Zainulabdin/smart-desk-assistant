@@ -16,7 +16,7 @@ A voice assistant on an **ESP32-S3 N16R8** (16 MB flash, 8 MB octal PSRAM):
    Topics: `jarvis/<id>/transcript` (QoS 1, JSON `{"device","id","text","audio_ms"}`) and
    `jarvis/<id>/status` (retained `online`/`offline`, Last Will). `<id>` = last 3 MAC bytes.
    Uses the built-in `esp-mqtt` + cJSON, the TLS CA bundle, and a non-blocking `enqueue`. Credentials are `SEED_MQTT_HOST/USER/PASS` in `secrets.h`.
-4c. **Subscribes** to `jarvis/<id>/reminder` and `jarvis/<id>/response` (QoS 1, `{"text","id"}` or plain text, duplicates dropped by `id`).
+4c. **Subscribes** to `jarvis/<id>/reminder` and `jarvis/<id>/response` (QoS 1, `{"text","id"}` or plain text, duplicates dropped by `id`). Reminders may also carry `"title"`, `"at"` (`"10:00"`) and `"starts_at"` (unix seconds) for the reminder screen's title and live countdown.
    The text is spoken with **Groq TTS** (`canopylabs/orpheus-v1-english`, voice `diana`, same Groq key):
    - The text is split into ≤200-char pieces (the Orpheus limit), cut at sentence ends.
    - `ttsFetchTask` (core 0, prio 3) streams each WAV's PCM into a **1 MB PSRAM stream buffer**.
@@ -87,6 +87,7 @@ PlatformIO uses ESP-IDF's CMake only to configure the build, then compiles with 
 | cancelled | Idle, "Didn't catch that", 3 s |
 | errors | Error, red orb + reason (no Wi-Fi / network / 429 / HTTP code), 4 s |
 | setup failure | Error + reason (e.g. "No wake model"), stops |
+| reminder (MQTT) | Reminder (`src/ui/reminder.slint`): countdown ring + meeting title, bars while spoken, then kept up `REMINDER_HOLD_MS` (60 s) and back to Home with the card. BOOT dismisses screen + card |
 
 ### Audio pipeline (ported from Arduino, logic unchanged)
 - **Tasks:**

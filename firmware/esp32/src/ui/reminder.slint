@@ -1,0 +1,190 @@
+// Full-screen meeting reminder, shown when a Calendar reminder arrives over
+// MQTT. A countdown ring, the meeting title and its start time; equalizer
+// bars while the reminder is being spoken. 128x160, ST7735S.
+//
+// Font sizes must be literals: the firmware build pre-renders glyphs only
+// for sizes it can see at compile time.
+
+import "fonts/Inter-Light.ttf";
+import "fonts/Inter-Regular.ttf";
+import "fonts/Inter-SemiBold.ttf";
+
+// ---------- Countdown ring: minutes left, "Now", or "!" if unknown ----------
+component CountdownRing inherits Rectangle {
+    in property <int> minutes; // < 0 = unknown
+    in property <color> accent;
+
+    width: 60px;
+    height: 60px;
+
+    // Soft pulsing halo. animation-tick() only runs while this screen is shown.
+    property <float> wave: (Math.sin(360deg * animation-tick() / 1600ms) + 1) / 2;
+    Rectangle {
+        width: root.width * (0.86 + 0.14 * wave);
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.accent.with-alpha(0.10 + 0.10 * wave);
+    }
+
+    Rectangle {
+        width: 50px;
+        height: 50px;
+        border-radius: 25px;
+        border-width: 2px;
+        border-color: root.accent;
+        background: #05070a;
+    }
+
+    if root.minutes > 0: VerticalLayout {
+        alignment: center;
+        spacing: 0;
+        Text {
+            text: root.minutes;
+            font-family: "Inter";
+            font-size: 20px;
+            font-weight: 600;
+            color: #ffffff;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "min";
+            font-family: "Inter";
+            font-size: 8px;
+            font-weight: 400;
+            color: #ffffffb3;
+            horizontal-alignment: center;
+        }
+    }
+
+    if root.minutes <= 0: Text {
+        text: root.minutes == 0 ? "Now" : "!";
+        font-family: "Inter";
+        font-size: 14px;
+        font-weight: 600;
+        color: #ffffff;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// ---------- Equalizer bars while the reminder is spoken ----------
+component SpeakingBars inherits HorizontalLayout {
+    in property <color> accent;
+    spacing: 2px;
+    alignment: center;
+    for i in 5: VerticalLayout {
+        alignment: center;
+        Rectangle {
+            width: 3px;
+            height: 3px + 7px * (Math.sin(360deg * animation-tick() / 520ms + i * 70deg) + 1) / 2;
+            border-radius: 1px;
+            background: root.accent;
+        }
+    }
+}
+
+// ---------- The reminder screen ----------
+export component ReminderScreen inherits Rectangle {
+    in property <string> title;       // meeting title (or the whole message)
+    in property <string> start-time;  // "10:00", empty if unknown
+    in property <int> minutes: -1;    // minutes until start, < 0 = unknown
+    in property <bool> speaking;      // reminder is being read aloud
+
+    property <color> accent: #ff9f0a; // same orange as the Home reminder card
+
+    width: 128px;
+    height: 160px;
+    clip: true;
+    background: @linear-gradient(170deg, #3a2a12 0%, #1a1208 45%, #05070a 100%);
+
+    VerticalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        spacing: 0;
+
+        // Header: badge + label, start time on the right
+        HorizontalLayout {
+            height: 11px;
+            spacing: 3px;
+
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 2px;
+                    background: root.accent;
+                }
+            }
+
+            Text {
+                horizontal-stretch: 0;
+                text: "MEETING";
+                font-family: "Inter";
+                font-size: 8px;
+                font-weight: 600;
+                color: #ffffffcc;
+                vertical-alignment: center;
+            }
+
+            Text {
+                horizontal-stretch: 1;
+                text: root.start-time;
+                font-family: "Inter";
+                font-size: 8px;
+                font-weight: 400;
+                color: #ffffff99;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle { height: 6px; }
+
+        HorizontalLayout {
+            alignment: center;
+            height: 60px;
+            CountdownRing {
+                minutes: root.minutes;
+                accent: root.accent;
+            }
+        }
+
+        Rectangle { height: 6px; }
+
+        // Title: up to three lines
+        Text {
+            height: 42px;
+            text: root.title;
+            font-family: "Inter";
+            font-size: 11px;
+            font-weight: 600;
+            color: #ffffff;
+            wrap: word-wrap;
+            overflow: elide;
+            horizontal-alignment: center;
+            vertical-alignment: top;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Footer: bars while speaking, otherwise how to dismiss
+        if root.speaking: SpeakingBars {
+            height: 12px;
+            accent: root.accent;
+        }
+
+        if !root.speaking: Text {
+            height: 12px;
+            text: "BOOT to dismiss";
+            font-family: "Inter";
+            font-size: 7px;
+            font-weight: 400;
+            color: #ffffff80;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

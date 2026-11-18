@@ -19,7 +19,11 @@ class Settings(BaseSettings):
     SESSION_SECRET: str = ""
     PWA_ORIGIN:str =""
     ALLOWED_GOOGLE_EMAILS: str = ""
-    
+    MQTT_HOST: str = ""
+    MQTT_PORT: int = 8883
+    MQTT_USERNAME: str = ""
+    MQTT_PASSWORD: str = ""
+    ESP_DEVICE_ID: str = ""
 
 
 @lru_cache

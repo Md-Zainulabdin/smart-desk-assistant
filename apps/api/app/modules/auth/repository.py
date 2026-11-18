@@ -33,6 +33,18 @@ async def save_google_user(
     return User(**dict(row))
 
 
+async def latest_refresh_token(conn: asyncpg.Connection) -> str | None:
+    """The most recently saved Google refresh token (one user per desk)."""
+    return await conn.fetchval(
+        """
+        SELECT refresh_token FROM users
+        WHERE refresh_token IS NOT NULL
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+    )
+
+
 async def get_user_by_id(conn: asyncpg.Connection, user_id: uuid.UUID) -> User | None:
     row = await conn.fetchrow(f"SELECT {USER_COLUMNS} FROM users WHERE id = $1", user_id)
     return User(**dict(row)) if row else None
