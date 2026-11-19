@@ -57,7 +57,7 @@ def search_web(
     if validation_error is not None:
         return validation_error
 
-    api_key = get_settings().tavily_api_key
+    api_key = get_settings().TAVILY_API_KEY
     if not api_key:
         return error_response(ErrorCode.MISSING_API_KEY, "Web search is not configured.")
 
@@ -93,6 +93,8 @@ def _fetch_results(
     query: str, max_results: int, api_key: str, **date_filters: str
 ) -> list[dict[str, str]]:
     payload = {"query": query, "max_results": max_results, "search_depth": "basic", **date_filters}
+    if date_filters:
+        payload["filter_by_published_date"] = True
     headers = {"Authorization": f"Bearer {api_key}"}
     last_error: Exception | None = None
 

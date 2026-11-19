@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     pwa_origin: str = "http://localhost:3000"
     api_base_url: str = "http://localhost:8000"
 
-    tavily_api_key: str = ""
+    TAVILY_API_KEY: str = ""
 
 
 @lru_cache
