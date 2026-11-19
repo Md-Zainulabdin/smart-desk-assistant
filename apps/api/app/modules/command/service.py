@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.config import get_settings
+from app.config import settings
 from app.core.exceptions import ApiError
 from app.modules.command import clarify, extract
 from app.modules.command import intent as intent_module
@@ -12,7 +12,7 @@ from app.modules.command.schemas import CommandContext, CommandResponse, Intent,
 
 
 def _timezone(name: str | None) -> ZoneInfo:
-    resolved = name or get_settings().DEFAULT_TIMEZONE
+    resolved = name or settings.default_timezone
     try:
         return ZoneInfo(resolved)
     except (ZoneInfoNotFoundError, ValueError):

@@ -1,4 +1,3 @@
-from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,10 +11,12 @@ class Settings(BaseSettings):
     env: str = "dev"
     default_timezone: str = "UTC"
     groq_api_key: str = ""
+    tavily_api_key: str = ""
 
     google_client_id: str
     google_client_secret: str
     google_redirect_uri: str
+    # Comma-separated allowlist. Empty means any verified Google account (development only).
     allowed_google_emails: str = ""
 
     session_secret: str
@@ -27,12 +28,5 @@ class Settings(BaseSettings):
     pwa_origin: str = "http://localhost:3000"
     api_base_url: str = "http://localhost:8000"
 
-    TAVILY_API_KEY: str = ""
 
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-
-
-settings = get_settings()
+settings = Settings()

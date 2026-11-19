@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from app.config import get_settings
+from app.config import settings
 from app.modules.web_search import services as web_search
 
 SEARCH_URL = web_search.TAVILY_SEARCH_URL
@@ -28,10 +28,7 @@ def _patch_post(monkeypatch, result):
 
 @pytest.fixture(autouse=True)
 def api_key(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
+    monkeypatch.setattr(settings, "tavily_api_key", "test-key")
 
 
 def test_returns_normalized_results(monkeypatch):
@@ -135,8 +132,7 @@ def test_max_results_wrong_type(monkeypatch, limit):
 
 
 def test_missing_api_key_returns_config_error(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "")
-    get_settings.cache_clear()
+    monkeypatch.setattr(settings, "tavily_api_key", "")
     calls = _patch_post(monkeypatch, _response({"results": []}))
 
     result = web_search.search_web("query")
@@ -217,8 +213,7 @@ def test_error_response_shape(monkeypatch):
 
 
 def test_failure_does_not_leak_secret_or_exception(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "super-secret-key")
-    get_settings.cache_clear()
+    monkeypatch.setattr(settings, "tavily_api_key", "super-secret-key")
     _patch_post(monkeypatch, httpx.ConnectError("connection refused"))
 
     result = web_search.search_web("query")

@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
+from app.config import settings
 from app.main import create_app
 from app.modules.command import service as command_service
 from app.modules.web_search import services as web_search
@@ -16,10 +16,7 @@ client = TestClient(create_app())
 
 @pytest.fixture(autouse=True)
 def api_key(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
+    monkeypatch.setattr(settings, "tavily_api_key", "test-key")
 
 
 def test_search_success_returns_standard_envelope(monkeypatch):
@@ -113,8 +110,7 @@ def test_invalid_request_does_not_call_provider(monkeypatch):
 
 
 def test_missing_api_key_returns_config_error(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "")
-    get_settings.cache_clear()
+    monkeypatch.setattr(settings, "tavily_api_key", "")
 
     res = client.post("/api/v1/search", json={"query": "hello"})
 
@@ -142,8 +138,7 @@ def test_provider_failure_returns_502(monkeypatch):
 
 
 def test_error_response_does_not_leak_secret(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "super-secret-key")
-    get_settings.cache_clear()
+    monkeypatch.setattr(settings, "tavily_api_key", "super-secret-key")
 
     def fail(*args, **kwargs):
         raise web_search.SearchProviderError("super-secret-key leaked")

@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Smart Desk Assistant API", lifespan=lifespan)
     register_exception_handlers(app)
 
+    # Short-lived cookie for the OAuth handshake only (state + nonce), not the app session.
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.session_secret,
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
         https_only=settings.cookie_secure,
         max_age=600,
     )
+    # Added last so CORS is the outermost layer.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[settings.pwa_origin],

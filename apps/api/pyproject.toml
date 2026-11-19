@@ -28,6 +28,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 
+# Let FastAPI's `conn=Depends(get_db)` style pass lint.
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends"]
 

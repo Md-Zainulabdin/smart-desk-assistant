@@ -3,7 +3,7 @@ from typing import Any
 
 import httpx
 
-from app.config import get_settings
+from app.config import settings
 from app.modules.command.schemas import CommandContext, Intent, Status
 from app.modules.command.service import parse_command
 from app.services.response import ErrorCode, error_response, success_response
@@ -57,7 +57,7 @@ def search_web(
     if validation_error is not None:
         return validation_error
 
-    api_key = get_settings().TAVILY_API_KEY
+    api_key = settings.tavily_api_key
     if not api_key:
         return error_response(ErrorCode.MISSING_API_KEY, "Web search is not configured.")
 
