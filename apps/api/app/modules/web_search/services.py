@@ -29,7 +29,6 @@ def search_web_command(
     timezone: str | None = None,
     context: CommandContext | None = None,
 ) -> dict[str, Any]:
-    """Run a search when a parsed command has a ready WEB_SEARCH intent."""
     command = parse_command(text, timezone=timezone, context=context)
     if command.status is Status.NEEDS_CLARIFICATION:
         return error_response(
@@ -54,18 +53,11 @@ def search_web(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, Any]:
-    """Search the web and return a standardized response.
-
-    The query is validated, sent to the configured Tavily endpoint, and the
-    provider results are normalized into ``{"title", "url", "snippet"}`` items.
-    Invalid input, missing configuration, and provider failures are returned as
-    standardized error responses rather than raised.
-    """
     validation_error = _validate_input(query, max_results)
     if validation_error is not None:
         return validation_error
 
-    api_key = get_settings().TAVILY_API_KEY
+    api_key = get_settings().tavily_api_key
     if not api_key:
         return error_response(ErrorCode.MISSING_API_KEY, "Web search is not configured.")
 
@@ -87,16 +79,13 @@ def search_web(
 def _validate_input(query: Any, max_results: Any) -> dict[str, Any] | None:
     if not isinstance(query, str) or not query.strip():
         return error_response(ErrorCode.INVALID_QUERY, "A non-empty search query is required.")
-
     if isinstance(max_results, bool) or not isinstance(max_results, int):
         return error_response(ErrorCode.INVALID_MAX_RESULTS, "max_results must be an integer.")
-
     if not MIN_MAX_RESULTS <= max_results <= MAX_MAX_RESULTS:
         return error_response(
             ErrorCode.INVALID_MAX_RESULTS,
             f"max_results must be between {MIN_MAX_RESULTS} and {MAX_MAX_RESULTS}.",
         )
-
     return None
 
 
@@ -104,8 +93,6 @@ def _fetch_results(
     query: str, max_results: int, api_key: str, **date_filters: str
 ) -> list[dict[str, str]]:
     payload = {"query": query, "max_results": max_results, "search_depth": "basic", **date_filters}
-    if date_filters:
-        payload["filter_by_published_date"] = True
     headers = {"Authorization": f"Bearer {api_key}"}
     last_error: Exception | None = None
 
@@ -130,11 +117,9 @@ def _fetch_results(
 def _normalize_results(payload: Any) -> list[dict[str, str]]:
     if not isinstance(payload, dict):
         raise SearchProviderError("unexpected provider payload")
-
     raw_results = payload.get("results")
     if not isinstance(raw_results, list):
         raise SearchProviderError("provider payload is missing the results list")
-
     return [
         {
             "title": _as_text(item.get("title")),
