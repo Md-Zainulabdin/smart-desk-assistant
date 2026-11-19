@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     env: str = "dev"
     default_timezone: str = "UTC"
     groq_api_key: str = ""
+    tavily_api_key: str = ""
 
     google_client_id: str
     google_client_secret: str

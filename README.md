@@ -105,6 +105,48 @@ uv run uvicorn app.main:app --reload --port 8000
 After `git pull`, run `uv sync` if `pyproject.toml` or `uv.lock` changed.
 Commit both files whenever you add or remove a package.
 
+## Web search
+
+The web search module (`apps/api/app/modules/web_search/`) queries
+[Tavily](https://tavily.com). It accepts a direct query or a natural-language
+command parsed by the command parser.
+
+Set the key in `apps/api/.env`:
+
+```text
+TAVILY_API_KEY=your_tavily_api_key_here
+```
+
+`POST /api/v1/search`
+
+```json
+{ "query": "latest AI developments", "max_results": 5 }
+```
+
+Send `text` instead of `query` to search from a spoken or typed command:
+
+```json
+{ "text": "Search for AI news from yesterday", "timezone": "Asia/Karachi" }
+```
+
+The parser must return a ready `WEB_SEARCH` intent. Tavily receives the
+extracted query and any publication date range. If the command is incomplete,
+the endpoint returns `SEARCH_NEEDS_CLARIFICATION` with the parser's question;
+other intents return `SEARCH_INTENT_REQUIRED`. For a clarification flow, use
+`POST /api/v1/command` to obtain the pending `intent`, `slots`, and `missing`
+fields, then send them as `context` with the follow-up `text`.
+
+`max_results` is optional (default `5`, range `1`-`10`). Responses use the
+standard envelope:
+
+```json
+{ "success": true, "data": { "query": "...", "results": [] }, "error": null }
+```
+
+Status codes: `200` success, `400` invalid command or timezone, `422` validation,
+clarification, or wrong intent, `500` missing configuration, `502` provider
+failure. A search with zero results is still a success.
+
 ## Database migrations
 
 Migrations are plain SQL files in `apps/api/app/migrations/`, applied in filename order

@@ -9,6 +9,7 @@ from app.core.exceptions import register_exception_handlers
 from app.db import pool, run_migrations
 from app.modules.auth.router import router as auth_router
 from app.modules.command.router import router as command_router
+from app.modules.web_search.routes import router as web_search_router
 from app.routers.health import router as health_router
 
 
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(command_router)
     app.include_router(auth_router)
+    app.include_router(web_search_router)
     return app
 
 
