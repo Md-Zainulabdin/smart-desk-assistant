@@ -1,0 +1,39 @@
+name: mobile
+
+on:
+  push:
+    branches: [develop, main, "feature/**"]
+    paths:
+      - "apps/mobile/**"
+      - "packages/shared-types/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mobile.yml"
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "packages/shared-types/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mobile.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck:mobile
+      - run: npm run lint:mobile
+      - run: npm run format:check:mobile
+
+      - run: npm run build:mobile
+        env:
+          # Only the local default; no backend is called during the build.
+          NEXT_PUBLIC_API_URL: http://localhost:8000
