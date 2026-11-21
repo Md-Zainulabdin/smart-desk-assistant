@@ -1,5 +1,7 @@
 from app.config import settings
+from app.core.security import encrypt_token
 from app.modules.auth import repository
+from app.modules.auth.oauth import CALENDAR_EVENTS_SCOPE
 
 
 class SignInRejected(Exception):
@@ -16,8 +18,17 @@ def _is_allowed(email: str) -> bool:
     return not allowed or email.lower() in allowed
 
 
-def sign_in_with_google(conn, claims: dict, user_agent: str | None, old_token: str | None = None) -> str:
-    """Create or find the user for verified Google claims and return a new session token."""
+def sign_in_with_google(
+    conn,
+    claims: dict,
+    user_agent: str | None,
+    old_token: str | None = None,
+    google_token: dict | None = None,
+) -> str:
+    """Create or find the user for verified Google claims and return a new session token.
+
+    If the user granted Calendar access, the Google refresh token is stored encrypted.
+    """
     sub = claims.get("sub")
     email = claims.get("email")
     if not sub or not email:
@@ -30,6 +41,11 @@ def sign_in_with_google(conn, claims: dict, user_agent: str | None, old_token: s
     user = repository.upsert_google_user(
         conn, sub, email, True, claims.get("name"), claims.get("picture")
     )
+    google_token = google_token or {}
+    refresh_token = google_token.get("refresh_token")
+    # The user can untick Calendar on the consent screen; sign-in still works without it.
+    if refresh_token and CALENDAR_EVENTS_SCOPE in google_token.get("scope", "").split():
+        repository.save_google_refresh_token(conn, user["id"], encrypt_token(refresh_token))
     if old_token:
         repository.revoke_session(conn, old_token)
     return repository.create_session(conn, user["id"], user_agent)

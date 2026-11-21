@@ -22,9 +22,9 @@ def _error_redirect(code: str) -> RedirectResponse:
     return RedirectResponse(f"{settings.pwa_origin}/?auth_error={code}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-def _sign_in(claims: dict, user_agent: str | None, old_token: str | None) -> str:
+def _sign_in(claims: dict, user_agent: str | None, old_token: str | None, token: dict) -> str:
     with pool.connection() as conn:
-        return service.sign_in_with_google(conn, claims, user_agent, old_token)
+        return service.sign_in_with_google(conn, claims, user_agent, old_token, token)
 
 
 def _sign_out(raw_token: str | None) -> None:
@@ -34,8 +34,9 @@ def _sign_out(raw_token: str | None) -> None:
 
 @router.get("/google/start")
 async def google_start(request: Request):
+    # offline + consent: Google returns a refresh token, so Calendar bookings work later.
     return await oauth.google.authorize_redirect(
-        request, settings.google_redirect_uri, prompt="select_account"
+        request, settings.google_redirect_uri, access_type="offline", prompt="consent select_account"
     )
 
 
@@ -64,6 +65,7 @@ async def google_callback(request: Request):
             dict(claims),
             request.headers.get("user-agent"),
             request.cookies.get(settings.session_cookie_name),
+            dict(token),
         )
     except service.SignInRejected as rejected:
         logger.warning("google sign-in failed: %s", rejected.code)

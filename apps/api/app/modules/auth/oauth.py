@@ -4,8 +4,9 @@ from app.config import settings
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
-# Sign-in only. Calendar scopes are requested by a separate flow (Phase 3).
-SIGN_IN_SCOPES = "openid email profile"
+CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
+# One consent at sign-in: profile + permission to create Calendar events.
+SIGN_IN_SCOPES = f"openid email profile {CALENDAR_EVENTS_SCOPE}"
 
 oauth = OAuth()
 oauth.register(
