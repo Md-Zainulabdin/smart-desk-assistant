@@ -14,6 +14,7 @@ from app.modules.calendar.router import router as calendar_router
 from app.modules.command.router import router as command_router
 from app.modules.notes.router import router as notes_router
 from app.modules.orchestrator.router import router as orchestrator_router
+from app.modules.web_search.routes import router as web_search_router
 from app.routers.health import router as health_router
 
 PLAYGROUND_DIR = Path(__file__).resolve().parent.parent / "playground"
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(notes_router)
     app.include_router(calendar_router)
     app.include_router(orchestrator_router)
+    app.include_router(web_search_router)
 
     # Dev-only test page at "/". Mounted last so every API route above wins.
     if settings.env == "dev":
