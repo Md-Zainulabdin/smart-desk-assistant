@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@desk/shared-types"],
   experimental: {
     agentFeedback: true,
+    agentUpgrade: "security",
   },
   cacheComponents: true,
   partialPrefetching: true,
