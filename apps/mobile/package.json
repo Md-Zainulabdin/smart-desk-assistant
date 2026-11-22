@@ -14,7 +14,7 @@
   "dependencies": {
     "@desk/shared-types": "*",
     "@tanstack/react-query": "^5.108.2",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -26,7 +26,7 @@
     "@types/react-dom": "^19",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "16.4.3",
+    "eslint-config-next": "16.4.6",
     "prettier": "^3.9.10",
     "serwist": "^9.5.13",
     "tailwindcss": "^4",
