@@ -84,8 +84,9 @@ def me(user: dict = Depends(get_current_user)):
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(request: Request):
+    # CSRF check: the PWA, or this API's own pages (the dev playground), may sign out.
     origin = request.headers.get("origin")
-    if origin is not None and origin != settings.pwa_origin:
+    if origin is not None and origin not in {settings.pwa_origin, settings.api_base_url}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Origin not allowed")
 
     await run_in_threadpool(_sign_out, request.cookies.get(settings.session_cookie_name))

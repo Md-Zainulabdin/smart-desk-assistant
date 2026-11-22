@@ -191,6 +191,22 @@ def strip_discourse(text: str) -> str:
     stripped = _DISCOURSE_LEAD.sub("", text.strip()).strip()
     return stripped or text.strip()
 
+# Speech-to-text and quick typing often write 7:50 as "7 50" or "7.50".
+_LOOSE_TIME_AM_PM = re.compile(
+    rf"\b(?P<h>\d{{1,2}})[ .](?P<m>[0-5]\d)(?P<mer>\s*{_MER})(?!\w)", re.IGNORECASE
+)
+_LOOSE_TIME_AFTER_AT = re.compile(
+    rf"\b(?P<at>at|around|by)\s+(?P<h>\d{{1,2}})[ .](?P<m>[0-5]\d)\b(?!\s*(?:{_MONTH_ALT}|\d))",
+    re.IGNORECASE,
+)
+
+
+def normalize_times(text: str) -> str:
+    """Rewrite "7 50 pm" and "at 7 50" as "7:50 pm" and "at 7:50", so one time pattern handles them."""
+    text = _LOOSE_TIME_AM_PM.sub(lambda m: f"{m['h']}:{m['m']}{m['mer']}", text)
+    return _LOOSE_TIME_AFTER_AT.sub(lambda m: f"{m['at']} {m['h']}:{m['m']}", text)
+
+
 _TIME_NOISE = (
     RELATIVE_PATTERN,
     RANGE_PATTERN,
@@ -371,10 +387,13 @@ def _day_from_expr(expr: str, today: date) -> date | None:
 
 
 def resolve_date(text: str, today: date) -> date | None:
-    match = DATE_PATTERN.search(text)
-    if not match:
-        return None
-    return _day_from_expr(match.group(1), today)
+    # A phrase like "next week" names a range, not one day, so keep looking: in
+    # "next week tomorrow at 5 pm" the day is "tomorrow".
+    for match in DATE_PATTERN.finditer(text):
+        day = _day_from_expr(match.group(1), today)
+        if day:
+            return day
+    return None
 
 
 def resolve_date_range(text: str, today: date) -> tuple[date, date] | None:
