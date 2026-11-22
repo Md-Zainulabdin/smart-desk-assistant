@@ -45,7 +45,7 @@ Open it as a draft pull request into `develop` right away so CI runs and the tea
 | 6     | Calendar upcoming and create                                                                                                             | end                    |
 | 7     | Device and context status, notifications                                                                                                 | end                    |
 
-Status: stages 1 and 2 are done. Stage 3 has the `/login` screen only, with no session. Stages 4 and 5 have mock screens with local state. Stages 6 and 7 are placeholders. All screens read from `lib/mock-data.ts` until the backend endpoints exist.
+Status: the evaluation MVP is connected. The shell is session-gated, and notes, calendar, and web search call the FastAPI backend. Reminders (stage 5) stay a local preview because the backend feature is out of scope, and device/context (stage 7) remains a placeholder.
 
 ## Folder Layout
 
@@ -80,25 +80,26 @@ apps/mobile/
 - The service worker is built by `@serwist/turbopack` from `app/sw.ts` through the route handler in `app/serwist/[path]/route.ts`, and served at `/serwist/sw.js`. It uses native esbuild because `esbuild-wasm` is broken on Windows.
 - `app/~offline/page.tsx` is precached and shown for failed document navigations.
 - Backend responses are never cached: `/api/` requests are `NetworkOnly`, and unmatched writes pass straight to the network. Stale notes or calendar data are worse than a failed request.
+- Authenticated reads use TanStack Query with the query keys `session`, `notes`, and `meetings`. Signing out clears the query cache and the service worker caches before returning to `/login`.
 - The service worker is disabled in development so it cannot serve stale responses while editing.
 - Icons are not added yet. Without a 192 and 512 icon Chrome will not offer the install prompt, though the app can still be installed from the browser menu.
 
 ## Screens
 
-Mock screens, no API calls yet. View types live in `lib/types.ts`, fixtures in `lib/mock-data.ts`.
+| route        | content                                                                |
+| ------------ | ---------------------------------------------------------------------- |
+| `/`          | greeting, next meeting, recent notes                                   |
+| `/notes`     | live list, search, create                                              |
+| `/calendar`  | live upcoming meetings, create                                         |
+| `/search`    | live Tavily web search                                                 |
+| `/reminders` | local preview; backend reminders are out of scope                      |
+| `/settings`  | live account, sign out, app info                                       |
+| `/login`     | Google sign-in, outside `(app)` so it has no header or nav             |
+| `/device`    | placeholder                                                            |
 
-| route                  | content                                                           |
-| ---------------------- | ----------------------------------------------------------------- |
-| `/`                    | greeting, assistant status, next meeting, reminders, recent notes |
-| `/notes`               | search, tag filters, pinned grouping                              |
-| `/reminders`           | filters, today / tomorrow / later / completed groups              |
-| `/settings`            | assistant, notification mode, account, about                      |
-| `/login`               | Google sign-in, outside `(app)` so it has no header or nav        |
-| `/calendar`, `/device` | placeholders until stages 6 and 7                                 |
-
-- `/login` links to `${NEXT_PUBLIC_API_URL}/auth/google` with a full-page navigation. No CORS is needed because it is not a fetch. The link 404s until `feature/google-auth` merges, and there is no session gate on `/` yet.
-- Interactive state is local to each component and resets on reload. No persistence.
-- Shared layout primitives: `PageHeader`, `CardList` / `CardRow`, `FilterChips`, `IconButton`, `EmptyState`, `SectionHeader`, `AssistantStatusCard`. Reuse them instead of re-implementing row spacing or card styling.
+- `/login` links to `${NEXT_PUBLIC_API_URL}/auth/google/start` with a full-page navigation. No CORS is needed because it is not a fetch. `(app)/layout.tsx` checks `/auth/me` and redirects to `/login` on 401.
+- Shared layout primitives: `PageHeader`, `CardList` / `CardRow`, `FilterChips`, `IconButton`, `EmptyState`, `SectionHeader`, `LoadingState`, `LoadError`. Reuse them instead of re-implementing row spacing or card styling.
+- `lib/mock-data.ts` now contains reminders only.
 
 ## Backend Contracts
 
@@ -130,30 +131,32 @@ POST /api/v1/command
 - `apps/mobile/lib/api.ts` is the only place that calls these endpoints.
 - Full contract: `docs/command-parser-contract.md`.
 
-Import the matching types from `packages/shared-types` rather than redeclaring them.
+Other endpoints used by the PWA:
+
+```text
+GET  /auth/me                       -> User
+POST /auth/logout                   -> 204
+GET  /api/v1/notes                  -> Note[]
+POST /api/v1/notes { content }      -> Note
+GET  /api/v1/calendar/meetings      -> Meeting[] (next 7 days)
+POST /api/v1/calendar/meetings      -> { id, link, meet_link }
+POST /api/v1/search { query }       -> { success, data: { query, results }, error }
+```
+
+- Every endpoint except the Google start/callback routes requires the `sd_session` cookie. `lib/api.ts` sends `credentials: "include"`.
+- Search uses the standardized `{ success, data, error }` envelope, including validation errors. Other modules keep `{ detail, code }` errors.
+- Import the matching types from `packages/shared-types` rather than redeclaring them.
 
 ## Integration
 
-Merge order before the PWA screens depend on the backend:
+The evaluation MVP combines the parser, auth, notes/calendar, web search, and PWA branches. Keep the backend and PWA changes together on the integration branch until the full flow passes.
 
-1. ~~`feature/command-intent` -> `develop`~~ merged
-2. `feature/google-auth` -> `develop` — still open
-
-Until `feature/google-auth` lands, the browser cannot call the API:
-
-- `develop` has no `CORSMiddleware`, so requests from `http://localhost:3000` to `http://localhost:8000` are blocked.
-- There are no auth routes yet, so no `sd_session` cookie exists.
-
-Login must be a full-page navigation to `/auth/google`, never a fetch, so the session cookie is first-party.
-
-Then pull `develop` into `feature/pwa` so the API client is built against real contracts.
-
-Shared-file hotspots between the PWA branch and the API branches:
-
-- `packages/shared-types/src/index.ts` and `packages/shared-types/package.json`
-- root `package-lock.json` when new npm dependencies are added
-
-Everything under `apps/api` and `apps/mobile` is disjoint, so merges stay simple as long as `develop` is pulled in right after those pull requests land.
+- Login must be a full-page navigation to `/auth/google/start`, never a fetch, so the session cookie is first-party.
+- `apps/api/app/main.py` must allow the PWA origin with credentials, and must include `GET`, `POST`, `PATCH`, `DELETE`, and `OPTIONS` for the notes and calendar routes.
+- `apps/api/.env` and `apps/mobile/.env.local` stay local. Fill Google, database, session, Tavily, and `TOKEN_ENCRYPTION_KEY` values before testing the real flows.
+- Shared-file hotspots between the PWA branch and the API branches:
+  - `packages/shared-types/src/index.ts` and `packages/shared-types/package.json`
+  - root `package-lock.json` when new npm dependencies are added
 
 <!-- BEGIN:nextjs-agent-rules -->
 

@@ -16,7 +16,7 @@ export function LoginView() {
       <div className="surface-card mt-8">
         {/* Full-page navigation, never a fetch: the session cookie must be first-party. */}
         <a
-          href={`${API_URL}/auth/google`}
+          href={`${API_URL}/auth/google/start`}
           className="flex h-12 items-center justify-center gap-2.5 rounded-xl border border-hairline bg-background text-[15px] font-medium transition-colors hover:bg-black/[.03] dark:hover:bg-white/[.05]"
         >
           <GoogleIcon />

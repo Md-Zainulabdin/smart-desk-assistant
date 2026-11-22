@@ -2,24 +2,13 @@
 
 import { useState } from "react";
 
-import { AssistantStatusCard } from "@/components/ui/assistant-status-card";
 import { CardList, CardRow } from "@/components/ui/card-list";
-import { CheckIcon } from "@/components/ui/icons";
-import type {
-  Account,
-  AssistantStatus,
-  DeviceInfo,
-  NotificationMode,
-  NotificationOption,
-} from "@/lib/types";
+import { PageHeader } from "@/components/ui/page-header";
+import { useSession } from "@/features/auth/session";
 
 import { SettingsGroup } from "./settings-group";
 
 interface SettingsViewProps {
-  status: AssistantStatus;
-  device: DeviceInfo;
-  account: Account;
-  notificationOptions: NotificationOption[];
   version: string;
   apiUrl: string;
 }
@@ -33,83 +22,49 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function SettingsView({
-  status,
-  device,
-  account,
-  notificationOptions,
-  version,
-  apiUrl,
-}: SettingsViewProps) {
-  const [mode, setMode] = useState<NotificationMode>(status.notificationMode);
+export function SettingsView({ version, apiUrl }: SettingsViewProps) {
+  const { user, signOut } = useSession();
+  const [signingOut, setSigningOut] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    setError(null);
+    try {
+      await signOut();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not sign out.");
+      setSigningOut(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
-      <SettingsGroup title="Assistant">
-        <AssistantStatusCard status={status} />
-        <CardList>
-          <CardRow>
-            <InfoRow label="Desk connection" value={device.isOnline ? "Online" : "Offline"} />
-          </CardRow>
-          <CardRow>
-            <InfoRow label="Last sync" value={device.lastSyncLabel} />
-          </CardRow>
-        </CardList>
-      </SettingsGroup>
-
-      <SettingsGroup title="Notifications">
-        <div role="radiogroup" aria-label="Notification mode">
-          <CardList>
-            {notificationOptions.map((option) => {
-              const active = option.mode === mode;
-              return (
-                <CardRow key={option.mode}>
-                  <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-foreground">
-                    <input
-                      type="radio"
-                      name="notification-mode"
-                      value={option.mode}
-                      checked={active}
-                      onChange={() => setMode(option.mode)}
-                      className="sr-only"
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-[14px] font-medium tracking-tight">
-                        {option.label}
-                      </span>
-                      <span className="mt-1 block text-[13px] leading-snug text-zinc-500">
-                        {option.description}
-                      </span>
-                    </span>
-                    {active && <CheckIcon className="mt-0.5 shrink-0" />}
-                  </label>
-                </CardRow>
-              );
-            })}
-          </CardList>
-        </div>
-      </SettingsGroup>
+      <PageHeader title="Settings" subtitle="Account and app" />
 
       <SettingsGroup title="Account">
         <CardList>
           <CardRow>
-            <InfoRow label="Name" value={account.name} />
+            <InfoRow label="Name" value={user.name ?? "Not set"} />
           </CardRow>
           <CardRow>
-            <InfoRow label="Email" value={account.email} />
+            <InfoRow label="Email" value={user.email} />
           </CardRow>
           <CardRow>
-            <InfoRow label="Signed in with" value={account.provider} />
+            <InfoRow label="Signed in with" value="Google" />
           </CardRow>
           <CardRow>
-            <a
-              href="/login"
-              className="block text-center text-[14px] font-medium text-red-500 transition-colors hover:text-red-400"
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              disabled={signingOut}
+              className="block w-full text-center text-[14px] font-medium text-red-500 transition-colors hover:text-red-400 disabled:opacity-50"
             >
-              Sign out
-            </a>
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
           </CardRow>
         </CardList>
+        {error && <p className="mt-3 text-[13px] text-red-500">{error}</p>}
       </SettingsGroup>
 
       <SettingsGroup title="About">

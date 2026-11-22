@@ -1,7 +1,8 @@
+import type { Note } from "@desk/shared-types";
+
 import { CardList } from "@/components/ui/card-list";
 import { SectionHeader } from "@/components/ui/section-header";
 import { NoteRow } from "@/features/notes/note-row";
-import type { Note } from "@/lib/types";
 
 interface RecentNotesProps {
   notes: Note[];

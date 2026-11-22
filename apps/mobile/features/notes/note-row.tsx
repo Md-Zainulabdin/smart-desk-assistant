@@ -1,5 +1,6 @@
 import { CardRow } from "@/components/ui/card-list";
-import type { Note } from "@/lib/types";
+import { formatDateTime } from "@/lib/format";
+import type { Note } from "@desk/shared-types";
 
 interface NoteRowProps {
   note: Note;
@@ -7,30 +8,33 @@ interface NoteRowProps {
   compact?: boolean;
 }
 
+function splitNote(content: string): { title: string; snippet: string } {
+  const [first = "", ...rest] = content.split(/\r?\n/);
+  return {
+    title: first.trim() || "Untitled note",
+    snippet: rest.join(" ").trim(),
+  };
+}
+
 export function NoteRow({ note, href, compact = false }: NoteRowProps) {
+  const { title, snippet } = splitNote(note.content);
+
   return (
     <CardRow href={href}>
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="text-[14px] font-medium tracking-tight">{note.title}</p>
-        {note.pinned && !compact && (
-          <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-            Pinned
-          </span>
-        )}
-      </div>
+      <p className="text-[14px] font-medium tracking-tight">{title}</p>
 
-      <p
-        className={`mt-1 text-[13px] leading-snug text-zinc-500 ${
-          compact ? "line-clamp-1" : "line-clamp-2"
-        }`}
-      >
-        {note.snippet}
-      </p>
+      {snippet && (
+        <p
+          className={`mt-1 text-[13px] leading-snug text-zinc-500 ${
+            compact ? "line-clamp-1" : "line-clamp-2"
+          }`}
+        >
+          {snippet}
+        </p>
+      )}
 
       {!compact && (
-        <p className="mt-1.5 text-[13px] text-zinc-500">
-          {note.tag} · {note.updatedLabel}
-        </p>
+        <p className="mt-1.5 text-[13px] text-zinc-500">{formatDateTime(note.created_at)}</p>
       )}
     </CardRow>
   );

@@ -1,4 +1,14 @@
-import type { CommandRequest, CommandResponse } from "@desk/shared-types";
+import type {
+  CommandRequest,
+  CommandResponse,
+  Meeting,
+  MeetingCreated,
+  MeetingInput,
+  Note,
+  SearchData,
+  SearchEnvelope,
+  User,
+} from "@desk/shared-types";
 
 import { API_URL } from "./env";
 
@@ -22,20 +32,31 @@ export class ApiError extends Error {
   }
 }
 
-function detailFrom(body: unknown, fallback: string): string {
-  if (typeof body === "object" && body !== null && "detail" in body) {
-    const detail = (body as { detail: unknown }).detail;
-    if (typeof detail === "string") return detail;
+function errorFrom(body: unknown, fallback: string): { message: string; code: string } {
+  if (typeof body === "object" && body !== null) {
+    if ("error" in body) {
+      const error = (body as { error: unknown }).error;
+      if (typeof error === "object" && error !== null) {
+        const message = (error as { message: unknown }).message;
+        const code = (error as { code: unknown }).code;
+        return {
+          message: typeof message === "string" ? message : fallback,
+          code: typeof code === "string" ? code : "http_error",
+        };
+      }
+    }
+    if ("detail" in body) {
+      const detail = (body as { detail: unknown }).detail;
+      const code = (body as { code?: unknown }).code;
+      if (typeof detail === "string") {
+        return {
+          message: detail,
+          code: typeof code === "string" ? code : "http_error",
+        };
+      }
+    }
   }
-  return fallback;
-}
-
-function codeFrom(body: unknown): string {
-  if (typeof body === "object" && body !== null && "code" in body) {
-    const code = (body as { code: unknown }).code;
-    if (typeof code === "string") return code;
-  }
-  return "http_error";
+  return { message: fallback, code: "http_error" };
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -59,10 +80,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError("Could not reach the server.", 0, "network_error");
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   const body: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new ApiError(detailFrom(body, response.statusText), response.status, codeFrom(body));
+    const { message, code } = errorFrom(body, response.statusText || "Request failed.");
+    throw new ApiError(message, response.status, code);
   }
 
   return body as T;
@@ -74,4 +100,46 @@ export function sendCommand(command: CommandRequest): Promise<CommandResponse> {
     method: "POST",
     body: JSON.stringify(command),
   });
+}
+
+export function getCurrentUser(): Promise<User> {
+  return request<User>("/auth/me");
+}
+
+export function logout(): Promise<void> {
+  return request<void>("/auth/logout", { method: "POST" });
+}
+
+export function listNotes(): Promise<Note[]> {
+  return request<Note[]>("/api/v1/notes");
+}
+
+export function createNote(content: string): Promise<Note> {
+  return request<Note>("/api/v1/notes", {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function listMeetings(): Promise<Meeting[]> {
+  return request<Meeting[]>("/api/v1/calendar/meetings");
+}
+
+export function createMeeting(input: MeetingInput): Promise<MeetingCreated> {
+  return request<MeetingCreated>("/api/v1/calendar/meetings", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function searchWeb(query: string): Promise<SearchData> {
+  const envelope = await request<SearchEnvelope>("/api/v1/search", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
+  if (!envelope.success || envelope.data === null) {
+    const error = envelope.error;
+    throw new ApiError(error?.message ?? "Search failed.", 0, error?.code ?? "search_error");
+  }
+  return envelope.data;
 }

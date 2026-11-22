@@ -1,13 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { Note } from "@desk/shared-types";
 
 import { CardList } from "@/components/ui/card-list";
 import { EmptyState } from "@/components/ui/empty-state";
-import { FilterChips } from "@/components/ui/filter-chips";
 import { SearchIcon } from "@/components/ui/icons";
-import { SectionHeader } from "@/components/ui/section-header";
-import type { Note } from "@/lib/types";
 
 import { NoteRow } from "./note-row";
 
@@ -17,38 +15,15 @@ interface NoteListProps {
 
 export function NoteList({ notes }: NoteListProps) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
-
-  const filters = useMemo(
-    () => [
-      { value: "all", label: "All" },
-      { value: "pinned", label: "Pinned" },
-      ...Array.from(new Set(notes.map((note) => note.tag))).map((tag) => ({
-        value: tag,
-        label: tag,
-      })),
-    ],
-    [notes],
-  );
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return notes.filter((note) => {
-      if (filter === "pinned" && !note.pinned) return false;
-      if (filter !== "all" && filter !== "pinned" && note.tag !== filter) {
-        return false;
-      }
-      if (!needle) return true;
-      return `${note.title} ${note.snippet}`.toLowerCase().includes(needle);
-    });
-  }, [notes, query, filter]);
+    if (!needle) return notes;
+    return notes.filter((note) => note.content.toLowerCase().includes(needle));
+  }, [notes, query]);
 
-  const pinned = visible.filter((note) => note.pinned);
-  const rest = visible.filter((note) => !note.pinned);
-
-  function resetFilters() {
-    setQuery("");
-    setFilter("all");
+  if (notes.length === 0) {
+    return <EmptyState message="No notes yet. Add one above." />;
   }
 
   return (
@@ -65,49 +40,25 @@ export function NoteList({ notes }: NoteListProps) {
         />
       </div>
 
-      <FilterChips label="Filter notes" options={filters} value={filter} onChange={setFilter} />
-
       {visible.length === 0 ? (
         <EmptyState
           message="No notes match."
           action={
             <button
               type="button"
-              onClick={resetFilters}
+              onClick={() => setQuery("")}
               className="text-[13px] text-zinc-500 underline transition-colors hover:text-foreground"
             >
-              Clear filters
+              Clear search
             </button>
           }
         />
       ) : (
-        <div className="flex flex-col gap-8">
-          {pinned.length > 0 && (
-            <section>
-              <SectionHeader title="Pinned" />
-              <div className="mt-4">
-                <CardList>
-                  {pinned.map((note) => (
-                    <NoteRow key={note.id} note={note} />
-                  ))}
-                </CardList>
-              </div>
-            </section>
-          )}
-
-          {rest.length > 0 && (
-            <section>
-              <SectionHeader title={pinned.length > 0 ? "All notes" : "Notes"} />
-              <div className="mt-4">
-                <CardList>
-                  {rest.map((note) => (
-                    <NoteRow key={note.id} note={note} />
-                  ))}
-                </CardList>
-              </div>
-            </section>
-          )}
-        </div>
+        <CardList>
+          {visible.map((note) => (
+            <NoteRow key={note.id} note={note} />
+          ))}
+        </CardList>
       )}
     </div>
   );
