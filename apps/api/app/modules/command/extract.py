@@ -504,11 +504,10 @@ def extract(text: str, now: datetime) -> Parts:
 
     content = _tidy(_strip_lead(_NOTE_LEAD, text))
 
-    query_source = _STYLE_STRIP.sub(" ", cleaned)
-    query = (
-        _tidy(_SEARCH_TAIL.sub("", _strip_lead(_SEARCH_LEAD, query_source)), articles=True)
-        or _tidy(query_source, articles=True)
-    )
+    query_source = _STYLE_STRIP.sub(" ", cleaned).strip()
+    query = _tidy(_SEARCH_TAIL.sub("", _strip_lead(_SEARCH_LEAD, query_source)), articles=True)
+    if not query and not _SEARCH_LEAD.match(query_source):
+        query = _tidy(query_source, articles=True)
 
     return Parts(
         title=_sentence_case(title),
