@@ -5,12 +5,14 @@ The parser decides *what* the user wants; this module decides what happens next.
 """
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime, time
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from psycopg import Connection
 from pydantic import ValidationError
 
+from app.config import settings
 from app.core.exceptions import ApiError
 from app.modules.calendar import service as calendar_service
 from app.modules.calendar.schemas import MeetingIn
@@ -20,22 +22,21 @@ from app.modules.notes import repository as notes_repository
 from app.modules.notes.schemas import NoteInput
 from app.modules.orchestrator import repository
 from app.modules.orchestrator.schemas import AssistantRequest, AssistantResponse, Outcome
+from app.modules.web_search import services as web_search_service
 
 NOT_BUILT_YET = {
     Intent.CREATE_REMINDER: "Reminders",
-    Intent.READ_EVENTS: "Reading your calendar",
-    Intent.WEB_SEARCH: "Web search",
 }
 
 
 def _create_note(
-    conn: Connection, user_id: UUID, slots: dict[str, str], request_id: str | None
+    conn: Connection, user_id: UUID, slots: dict[str, str], request: AssistantRequest
 ) -> AssistantResponse:
     try:
         content = NoteInput(content=slots["content"]).content
     except (KeyError, ValidationError):
         return _failed(Intent.CREATE_NOTE, "I couldn't save that note.")
-    note = notes_repository.create_note(conn, user_id, content, request_id)
+    note = notes_repository.create_note(conn, user_id, content, request.request_id)
     return AssistantResponse(
         outcome=Outcome.DONE,
         intent=Intent.CREATE_NOTE,
@@ -45,7 +46,7 @@ def _create_note(
 
 
 def _create_event(
-    conn: Connection, user_id: UUID, slots: dict[str, str], request_id: str | None
+    conn: Connection, user_id: UUID, slots: dict[str, str], request: AssistantRequest
 ) -> AssistantResponse:
     try:
         meeting = MeetingIn(
@@ -53,7 +54,7 @@ def _create_event(
             start=slots["start_at"],
             end=slots["end_at"],
             timezone=slots.get("timezone"),
-            request_id=request_id,
+            request_id=request.request_id,
         )
     except (KeyError, ValidationError):
         return _failed(Intent.CREATE_EVENT, "I couldn't understand the meeting details.")
@@ -67,9 +68,64 @@ def _create_event(
     )
 
 
+def _web_search(
+    conn: Connection, user_id: UUID, slots: dict[str, str], request: AssistantRequest
+) -> AssistantResponse:
+    query = slots.get("query", "")
+    if not query:
+        return _failed(Intent.WEB_SEARCH, "I couldn't understand what to search for.")
+
+    result = web_search_service.search_web(
+        query,
+        start_date=slots.get("date_from"),
+        end_date=slots.get("date_to"),
+    )
+    if not result["success"]:
+        return _failed(Intent.WEB_SEARCH, result["error"]["message"])
+
+    data = result["data"]
+    count = len(data["results"])
+    reply = (
+        f"Found {count} results for {data['query']}."
+        if count
+        else f"No results found for {data['query']}."
+    )
+    return AssistantResponse(
+        outcome=Outcome.DONE,
+        intent=Intent.WEB_SEARCH,
+        reply=reply,
+        result={"query": data["query"], "results": data["results"]},
+    )
+
+
+def _read_events(
+    conn: Connection, user_id: UUID, slots: dict[str, str], request: AssistantRequest
+) -> AssistantResponse:
+    try:
+        timezone = ZoneInfo(request.timezone or settings.default_timezone)
+        start = datetime.combine(date.fromisoformat(slots["date_from"]), time.min, tzinfo=timezone)
+        end = datetime.combine(date.fromisoformat(slots["date_to"]), time.max, tzinfo=timezone)
+    except (KeyError, ValueError):
+        return _failed(Intent.READ_EVENTS, "I couldn't understand that date range.")
+
+    meetings = calendar_service.list_meetings(conn, user_id, start, end)
+    if meetings:
+        reply = f"You have {len(meetings)} meeting{'s' if len(meetings) != 1 else ''} in that range."
+    else:
+        reply = "You have no meetings in that range."
+    return AssistantResponse(
+        outcome=Outcome.DONE,
+        intent=Intent.READ_EVENTS,
+        reply=reply,
+        result={"events": [meeting.model_dump(mode="json") for meeting in meetings]},
+    )
+
+
 ACTIONS: dict[Intent, Callable[..., AssistantResponse]] = {
     Intent.CREATE_NOTE: _create_note,
     Intent.CREATE_EVENT: _create_event,
+    Intent.READ_EVENTS: _read_events,
+    Intent.WEB_SEARCH: _web_search,
 }
 
 
@@ -110,7 +166,7 @@ def handle(conn: Connection, user_id: UUID, request: AssistantRequest) -> Assist
         )
 
     try:
-        return action(conn, user_id, parsed.slots, request.request_id)
+        return action(conn, user_id, parsed.slots, request)
     except ApiError as error:
         # e.g. Calendar not granted: tell the user instead of failing the request.
         return _failed(parsed.intent, error.detail)

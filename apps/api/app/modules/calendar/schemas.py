@@ -49,3 +49,15 @@ class MeetingOut(BaseModel):
     id: str
     link: str
     meet_link: str | None
+
+
+class MeetingSummary(BaseModel):
+    """One event read from the user's Google Calendar."""
+
+    id: str
+    title: str
+    start: datetime
+    end: datetime
+    all_day: bool = False
+    link: str
+    meet_link: str | None = None

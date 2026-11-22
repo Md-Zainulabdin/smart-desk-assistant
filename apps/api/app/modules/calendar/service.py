@@ -1,7 +1,9 @@
 import hashlib
 import logging
 import uuid
+from datetime import date, datetime, time
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from psycopg import Connection
 
@@ -10,7 +12,7 @@ from app.core.exceptions import ApiError
 from app.core.security import TokenEncryptionError, decrypt_token
 from app.integrations import google_calendar
 from app.modules.calendar import repository
-from app.modules.calendar.schemas import MeetingIn, MeetingOut
+from app.modules.calendar.schemas import MeetingIn, MeetingOut, MeetingSummary
 
 logger = logging.getLogger(__name__)
 
@@ -89,3 +91,68 @@ def book_meeting(conn: Connection, user_id: UUID, meeting: MeetingIn) -> Meeting
             502,
         ) from None
     return MeetingOut(id=event["id"], link=event["htmlLink"], meet_link=event.get("hangoutLink"))
+
+
+def _event_times(event: dict) -> tuple[datetime, datetime, bool] | None:
+    """Normalize Google's date or dateTime fields into aware datetimes."""
+    start = event.get("start") or {}
+    end = event.get("end") or {}
+
+    if "dateTime" in start and "dateTime" in end:
+        start_at = datetime.fromisoformat(str(start["dateTime"]))
+        end_at = datetime.fromisoformat(str(end["dateTime"]))
+        return start_at, end_at, False
+
+    if "date" in start:
+        timezone = ZoneInfo(start.get("timeZone") or settings.default_timezone)
+        start_at = datetime.combine(date.fromisoformat(start["date"]), time.min, tzinfo=timezone)
+        end_date = date.fromisoformat(end.get("date", start["date"]))
+        return start_at, datetime.combine(end_date, time.min, tzinfo=timezone), True
+
+    return None
+
+
+def _summary(event: dict) -> MeetingSummary | None:
+    times = _event_times(event)
+    event_id = event.get("id")
+    if times is None or not event_id:
+        return None
+    start_at, end_at, all_day = times
+    return MeetingSummary(
+        id=event_id,
+        title=event.get("summary") or "Untitled event",
+        start=start_at,
+        end=end_at,
+        all_day=all_day,
+        link=event.get("htmlLink", ""),
+        meet_link=event.get("hangoutLink"),
+    )
+
+
+def list_meetings(
+    conn: Connection,
+    user_id: UUID,
+    start: datetime,
+    end: datetime,
+    max_results: int = 10,
+) -> list[MeetingSummary]:
+    """Read the user's upcoming meetings in the given time range."""
+    refresh_token = _refresh_token(conn, user_id)
+    try:
+        events = google_calendar.list_events(
+            refresh_token,
+            start.isoformat(),
+            end.isoformat(),
+            max_results,
+        )
+    except google_calendar.CalendarAuthError:
+        raise _sign_in_again("Google Calendar access expired.", "google_access_expired") from None
+    except google_calendar.CalendarApiError:
+        raise ApiError(
+            "Google Calendar could not read your meetings. Try again shortly.",
+            "calendar_request_failed",
+            502,
+        ) from None
+
+    meetings = (_summary(event) for event in events)
+    return [meeting for meeting in meetings if meeting is not None]

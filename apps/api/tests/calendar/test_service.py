@@ -1,4 +1,5 @@
 import re
+from datetime import UTC, datetime
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -23,7 +24,11 @@ def stored_token(monkeypatch):
 
 @pytest.fixture
 def google(monkeypatch):
-    mocks = {"insert_event": Mock(return_value=EVENT), "get_event": Mock()}
+    mocks = {
+        "insert_event": Mock(return_value=EVENT),
+        "get_event": Mock(),
+        "list_events": Mock(return_value=[]),
+    }
     for name, mock in mocks.items():
         monkeypatch.setattr(google_calendar, name, mock)
     return mocks
@@ -113,6 +118,69 @@ def test_google_failures_become_clear_errors(stored_token, google, raised, code,
     with pytest.raises(ApiError) as error:
         service.book_meeting(None, USER_ID, meeting())
     assert (error.value.code, error.value.status) == (code, status)
+
+
+def test_list_meetings_normalizes_timed_and_all_day_events(stored_token, google):
+    google["list_events"].return_value = [
+        {
+            "id": "timed",
+            "summary": "Standup",
+            "start": {"dateTime": "2026-11-20T10:00:00+05:00"},
+            "end": {"dateTime": "2026-11-20T10:30:00+05:00"},
+            "htmlLink": "https://calendar/timed",
+            "hangoutLink": "https://meet/timed",
+        },
+        {
+            "id": "all-day",
+            "summary": "Holiday",
+            "start": {"date": "2026-11-21", "timeZone": "Asia/Karachi"},
+            "end": {"date": "2026-11-22", "timeZone": "Asia/Karachi"},
+            "htmlLink": "https://calendar/all-day",
+        },
+        {"id": "no-times", "summary": "Broken"},
+    ]
+    start = datetime(2026, 11, 20, tzinfo=UTC)
+    end = datetime(2026, 11, 27, tzinfo=UTC)
+
+    meetings = service.list_meetings(None, USER_ID, start, end, max_results=5)
+
+    assert [meeting.id for meeting in meetings] == ["timed", "all-day"]
+    assert meetings[0].all_day is False
+    assert meetings[0].meet_link == "https://meet/timed"
+    assert meetings[1].all_day is True
+    assert meetings[1].start.isoformat() == "2026-11-21T00:00:00+05:00"
+    google["list_events"].assert_called_once_with(
+        "refresh-1", start.isoformat(), end.isoformat(), 5
+    )
+
+
+def test_list_meetings_without_calendar_access_is_refused(stored_token, google):
+    stored_token.return_value = None
+
+    with pytest.raises(ApiError) as error:
+        service.list_meetings(
+            None,
+            USER_ID,
+            datetime(2026, 11, 20, tzinfo=UTC),
+            datetime(2026, 11, 27, tzinfo=UTC),
+        )
+
+    assert (error.value.code, error.value.status) == ("calendar_not_connected", 403)
+    google["list_events"].assert_not_called()
+
+
+def test_list_meetings_google_failure_becomes_a_clear_error(stored_token, google):
+    google["list_events"].side_effect = google_calendar.CalendarApiError()
+
+    with pytest.raises(ApiError) as error:
+        service.list_meetings(
+            None,
+            USER_ID,
+            datetime(2026, 11, 20, tzinfo=UTC),
+            datetime(2026, 11, 27, tzinfo=UTC),
+        )
+
+    assert (error.value.code, error.value.status) == ("calendar_request_failed", 502)
 
 
 def test_undecryptable_token_asks_to_sign_in_again(stored_token, google):

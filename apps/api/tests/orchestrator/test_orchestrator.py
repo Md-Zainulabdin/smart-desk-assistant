@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -10,12 +10,13 @@ from app.db import get_db
 from app.main import create_app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.calendar import service as calendar_service
-from app.modules.calendar.schemas import MeetingOut
+from app.modules.calendar.schemas import MeetingOut, MeetingSummary
 from app.modules.notes import repository as notes_repository
 from app.modules.notes.schemas import Note
 from app.modules.orchestrator import repository
 from app.modules.orchestrator.schemas import AssistantRequest, Outcome
 from app.modules.orchestrator.service import handle
+from app.modules.web_search import services as web_search_service
 
 USER_ID = uuid4()
 NOTE = Note(id=uuid4(), content="buy milk", created_at=datetime.now(UTC))
@@ -33,9 +34,38 @@ def world(monkeypatch):
     monkeypatch.setattr(repository, "clear_pending", lambda conn, uid: pending.pop(uid, None))
     create_note = Mock(return_value=NOTE)
     book_meeting = Mock(return_value=BOOKED)
+    list_meetings = Mock(
+        return_value=[
+            MeetingSummary(
+                id="evt",
+                title="Design review",
+                start="2026-11-21T10:00:00+00:00",
+                end="2026-11-21T11:00:00+00:00",
+                link="https://cal/evt",
+            )
+        ]
+    )
+    search_web = Mock(
+        return_value={
+            "success": True,
+            "data": {
+                "query": "AI news",
+                "results": [{"title": "A", "url": "https://a", "snippet": "S"}],
+            },
+            "error": None,
+        }
+    )
     monkeypatch.setattr(notes_repository, "create_note", create_note)
     monkeypatch.setattr(calendar_service, "book_meeting", book_meeting)
-    return {"pending": pending, "create_note": create_note, "book_meeting": book_meeting}
+    monkeypatch.setattr(calendar_service, "list_meetings", list_meetings)
+    monkeypatch.setattr(web_search_service, "search_web", search_web)
+    return {
+        "pending": pending,
+        "create_note": create_note,
+        "book_meeting": book_meeting,
+        "list_meetings": list_meetings,
+        "search_web": search_web,
+    }
 
 
 def say(text: str, request_id: str | None = None):
@@ -92,6 +122,55 @@ def test_features_not_built_yet_say_so(world):
     response = say("Remind me to call mom tomorrow at 5 PM")
     assert response.outcome is Outcome.UNSUPPORTED
     assert response.reply == "Reminders isn't available yet."
+
+
+def test_ready_search_returns_results(world):
+    response = say("Search for AI news")
+
+    assert response.outcome is Outcome.DONE
+    assert response.result == {
+        "query": "AI news",
+        "results": [{"title": "A", "url": "https://a", "snippet": "S"}],
+    }
+    assert response.reply == "Found 1 results for AI news."
+    world["search_web"].assert_called_once_with("AI news", start_date=None, end_date=None)
+
+
+def test_search_failure_is_spoken(world):
+    world["search_web"].return_value = {
+        "success": False,
+        "data": None,
+        "error": {"code": "MISSING_API_KEY", "message": "Web search is not configured."},
+    }
+
+    response = say("Search for AI news")
+
+    assert response.outcome is Outcome.FAILED
+    assert response.reply == "Web search is not configured."
+
+
+def test_ready_read_events_returns_the_calendar_list(world):
+    response = say("What meetings do I have tomorrow")
+
+    assert response.outcome is Outcome.DONE
+    assert response.result["events"][0]["title"] == "Design review"
+    start, end = world["list_meetings"].call_args.args[2:4]
+    tomorrow = (datetime.now(UTC) + timedelta(days=1)).date()
+    assert start.date() == tomorrow
+    assert end.date() == tomorrow
+
+
+def test_read_events_without_calendar_access_is_spoken(world):
+    world["list_meetings"].side_effect = ApiError(
+        "Google Calendar access was not granted. Sign in with Google again.",
+        "calendar_not_connected",
+        403,
+    )
+
+    response = say("What meetings do I have tomorrow")
+
+    assert response.outcome is Outcome.FAILED
+    assert response.reply.startswith("Google Calendar access was not granted")
 
 
 def test_action_errors_become_a_spoken_failure(world):

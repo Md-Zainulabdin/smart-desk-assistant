@@ -1,8 +1,9 @@
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.core.exceptions import ServiceError
+from app.modules.auth.dependencies import get_current_user
 from app.modules.web_search.schemas import SearchRequest, SearchResponse
 from app.modules.web_search.services import search_web, search_web_command
 from app.services.response import ErrorCode
@@ -20,7 +21,10 @@ _ERROR_STATUS: dict[str, int] = {
 
 
 @router.post("/search", response_model=SearchResponse)
-def web_search(payload: SearchRequest) -> dict[str, Any]:
+def web_search(
+    payload: SearchRequest,
+    _user: Annotated[dict, Depends(get_current_user)],
+) -> dict[str, Any]:
     """Run a web search and return the standardized response envelope."""
     if payload.text is not None:
         result = search_web_command(

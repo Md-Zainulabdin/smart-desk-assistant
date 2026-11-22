@@ -51,14 +51,16 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         message = _first_validation_message(exc)
-        if request.url.path == app.url_path_for("parse_command"):
+        # Search uses the standardized envelope. The rest of the API keeps the
+        # plain {detail, code} shape that its clients already parse.
+        if request.url.path == app.url_path_for("web_search"):
             return JSONResponse(
                 status_code=422,
-                content={"detail": message, "code": "validation_error"},
+                content=error_response("validation_error", message),
             )
         return JSONResponse(
             status_code=422,
-            content=error_response("validation_error", message),
+            content={"detail": message, "code": "validation_error"},
         )
 
     @app.exception_handler(Exception)

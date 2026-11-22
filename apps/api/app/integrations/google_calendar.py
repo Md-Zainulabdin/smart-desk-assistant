@@ -6,6 +6,7 @@ from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
 from app.config import settings
 from app.modules.auth.oauth import CALENDAR_EVENTS_SCOPE
 
@@ -71,3 +72,24 @@ def insert_event(refresh_token: str, body: dict) -> dict:
 def get_event(refresh_token: str, event_id: str) -> dict:
     events = _service(refresh_token).events()
     return _execute(events.get(calendarId="primary", eventId=event_id))
+
+
+def list_events(
+    refresh_token: str,
+    time_min: str,
+    time_max: str,
+    max_results: int,
+) -> list[dict]:
+    """List timed events on the primary calendar in the given RFC 3339 range."""
+    events = _service(refresh_token).events()
+    result = _execute(
+        events.list(
+            calendarId="primary",
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=max_results,
+        )
+    )
+    return result.get("items", [])

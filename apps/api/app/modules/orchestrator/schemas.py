@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -24,5 +25,5 @@ class AssistantResponse(BaseModel):
     intent: Intent
     # One sentence to show or speak to the user.
     reply: str
-    # What was created, e.g. {"note_id": ...} or {"event_id", "link", "meet_link"}.
-    result: dict[str, str | None] = Field(default_factory=dict)
+    # What was created or read, e.g. {"note_id": ...} or {"events": [...]}.
+    result: dict[str, Any] = Field(default_factory=dict)

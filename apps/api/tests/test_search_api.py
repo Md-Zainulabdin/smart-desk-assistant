@@ -7,16 +7,28 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
+from app.db import get_db
 from app.main import create_app
+from app.modules.auth.dependencies import get_current_user
 from app.modules.command import service as command_service
 from app.modules.web_search import services as web_search
 
-client = TestClient(create_app())
+app = create_app()
+app.dependency_overrides[get_current_user] = lambda: {"id": "test-user"}
+client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def api_key(monkeypatch):
     monkeypatch.setattr(settings, "tavily_api_key", "test-key")
+
+
+def test_search_requires_sign_in():
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: None
+    response = TestClient(app).post("/api/v1/search", json={"query": "hello"})
+
+    assert response.status_code == 401
 
 
 def test_search_success_returns_standard_envelope(monkeypatch):
