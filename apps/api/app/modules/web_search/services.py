@@ -52,6 +52,7 @@ def search_web(
     *,
     start_date: str | None = None,
     end_date: str | None = None,
+    include_answer: bool = False,
 ) -> dict[str, Any]:
     validation_error = _validate_input(query, max_results)
     if validation_error is not None:
@@ -67,13 +68,22 @@ def search_web(
         for field, value in (("start_date", start_date), ("end_date", end_date))
         if value is not None
     }
+    answer = ""
     try:
-        results = _fetch_results(cleaned_query, max_results, api_key, **date_filters)
+        if include_answer:
+            answer, results = _fetch_answer_and_results(
+                cleaned_query, max_results, api_key, **date_filters
+            )
+        else:
+            results = _fetch_results(cleaned_query, max_results, api_key, **date_filters)
     except SearchProviderError:
         logger.warning("Web search provider call failed")
         return error_response(ErrorCode.SEARCH_FAILED, "Web search could not be completed.")
 
-    return success_response({"query": cleaned_query, "results": results})
+    data: dict[str, Any] = {"query": cleaned_query, "results": results}
+    if include_answer:
+        data["answer"] = answer
+    return success_response(data)
 
 
 def _validate_input(query: Any, max_results: Any) -> dict[str, Any] | None:
@@ -92,9 +102,27 @@ def _validate_input(query: Any, max_results: Any) -> dict[str, Any] | None:
 def _fetch_results(
     query: str, max_results: int, api_key: str, **date_filters: str
 ) -> list[dict[str, str]]:
+    body = _post_search(_search_payload(query, max_results, **date_filters), api_key)
+    return _normalize_results(body)
+
+
+def _fetch_answer_and_results(
+    query: str, max_results: int, api_key: str, **date_filters: str
+) -> tuple[str, list[dict[str, str]]]:
+    """Like `_fetch_results`, plus Tavily's short written answer to the query ("" if none)."""
+    payload = {**_search_payload(query, max_results, **date_filters), "include_answer": "basic"}
+    body = _post_search(payload, api_key)
+    return _as_text(body.get("answer") if isinstance(body, dict) else None), _normalize_results(body)
+
+
+def _search_payload(query: str, max_results: int, **date_filters: str) -> dict[str, Any]:
     payload = {"query": query, "max_results": max_results, "search_depth": "basic", **date_filters}
     if date_filters:
         payload["filter_by_published_date"] = True
+    return payload
+
+
+def _post_search(payload: dict[str, Any], api_key: str) -> Any:
     headers = {"Authorization": f"Bearer {api_key}"}
     last_error: Exception | None = None
 
@@ -103,7 +131,7 @@ def _fetch_results(
             with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS) as client:
                 response = client.post(TAVILY_SEARCH_URL, json=payload, headers=headers)
             response.raise_for_status()
-            return _normalize_results(response.json())
+            return response.json()
         except httpx.HTTPStatusError as exc:
             raise SearchProviderError(
                 f"provider responded with status {exc.response.status_code}"

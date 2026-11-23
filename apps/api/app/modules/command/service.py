@@ -166,7 +166,7 @@ def parse_command(
     if not original:
         raise ApiError("empty command", "invalid_command", 400)
 
-    cleaned = extract.strip_discourse(original)
+    cleaned = extract.normalize_times(extract.strip_discourse(original))
 
     tz = _timezone(timezone)
     now = datetime.now(tz)

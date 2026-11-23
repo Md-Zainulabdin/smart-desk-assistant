@@ -30,6 +30,7 @@ NOW = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
         ("october 5", date(2027, 10, 5)),
         ("2026-11-03", date(2026, 11, 3)),
         ("meeting on monday at 3 pm", date(2026, 10, 26)),
+        ("project due next week, meeting tomorrow at 5 pm", date(2026, 10, 21)),
     ],
 )
 def test_resolve_date(text: str, expected: date):
@@ -171,3 +172,19 @@ def test_extract_note_content(text: str, content: str):
 )
 def test_extract_search_query(text: str, query: str):
     assert extract.extract(text, NOW).query == query
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("at 7 50 PM", "at 7:50 PM"),
+        ("at 7.50 pm", "at 7:50 PM".lower()),
+        ("remind me at 7 50", "remind me at 7:50"),
+        ("at 7 50 pm tomorrow", "at 7:50 pm tomorrow"),
+        ("at 7:50 pm", "at 7:50 pm"),
+        ("by 12 25 december", "by 12 25 december"),
+        ("on 25 october", "on 25 october"),
+    ],
+)
+def test_normalize_times(text: str, expected: str):
+    assert extract.normalize_times(text) == expected

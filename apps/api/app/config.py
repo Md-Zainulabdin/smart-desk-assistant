@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Comma-separated allowlist. Empty means any verified Google account (development only).
     allowed_google_emails: str = ""
 
+    # Fernet key that encrypts the stored Google refresh token (Calendar access).
+    token_encryption_key: str
+
     session_secret: str
     session_ttl_days: int = 30
     session_cookie_name: str = "sd_session"

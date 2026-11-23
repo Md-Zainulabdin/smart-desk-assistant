@@ -278,3 +278,28 @@ def test_upstream_non_search_commands_skip_tavily(monkeypatch, text, code):
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == code
+
+
+def test_search_with_answer_returns_the_written_answer(monkeypatch):
+    monkeypatch.setattr(
+        web_search,
+        "_fetch_answer_and_results",
+        lambda query, max_results, api_key: (
+            "Karachi is 32 degrees.",
+            [{"title": "T", "url": "https://example.com", "snippet": "S"}],
+        ),
+    )
+
+    result = web_search.search_web("weather in karachi", include_answer=True)
+
+    assert result["success"] is True
+    assert result["data"]["answer"] == "Karachi is 32 degrees."
+    assert result["data"]["results"][0]["title"] == "T"
+
+
+def test_search_without_answer_flag_has_no_answer_field(monkeypatch):
+    monkeypatch.setattr(web_search, "_fetch_results", lambda query, max_results, api_key: [])
+
+    result = web_search.search_web("weather in karachi")
+
+    assert "answer" not in result["data"]

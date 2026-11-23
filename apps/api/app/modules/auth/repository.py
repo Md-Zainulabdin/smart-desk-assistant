@@ -25,6 +25,14 @@ def upsert_google_user(
         return cur.fetchone()
 
 
+def save_google_refresh_token(conn, user_id, refresh_token_encrypted: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE users SET google_refresh_token_encrypted = %s WHERE id = %s",
+            (refresh_token_encrypted, user_id),
+        )
+
+
 def get_user_by_id(conn, user_id) -> dict | None:
     with conn.cursor() as cur:
         cur.execute("SELECT id, email, name, picture_url FROM users WHERE id = %s", (user_id,))

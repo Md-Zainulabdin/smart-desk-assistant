@@ -1,10 +1,34 @@
 import hashlib
 import secrets
 
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Response
 
 from app.config import settings
-    
+
+
+class TokenEncryptionError(Exception):
+    """The encryption key is missing, or a stored token cannot be decrypted with it."""
+
+
+def _fernet() -> Fernet:
+    try:
+        return Fernet(settings.token_encryption_key)
+    except ValueError:
+        raise TokenEncryptionError("TOKEN_ENCRYPTION_KEY is not a valid Fernet key") from None
+
+
+def encrypt_token(raw: str) -> str:
+    """Encrypt an OAuth token before it is stored. The key lives outside the database."""
+    return _fernet().encrypt(raw.encode()).decode()
+
+
+def decrypt_token(stored: str) -> str:
+    try:
+        return _fernet().decrypt(stored.encode()).decode()
+    except InvalidToken:
+        raise TokenEncryptionError("stored token cannot be decrypted with this key") from None
+
 
 def new_session_token() -> str:
     """A random opaque token. The raw value goes only into the cookie."""

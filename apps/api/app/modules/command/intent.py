@@ -54,6 +54,8 @@ SEARCH_CUES = {
     "what happened",
     "find out",
     "give me",
+    "weather",
+    "forecast",
 }
 
 REMINDER_CUES = {"remind", "alarm", "wake me", "remember to"}
@@ -105,6 +107,16 @@ LEAD_EVENT = re.compile(
     re.IGNORECASE,
 )
 
+QUESTION_LEAD = re.compile(
+    r"^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?(?:tell\s+me\s+)?(?:"
+    r"who|whom|whose|what|whats|what's|when|where|why|which|how"
+    r"|is|are|was|were|does|did"
+    r"|explain|define|translate|convert|calculate"
+    r"|tell\s+me\s+about|(?:more\s+)?(?:info|information)\s+(?:on|about)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _SPLITTER = re.compile(r"\s+and\s+|\s+then\s+|;", re.IGNORECASE)
 
 
@@ -146,6 +158,18 @@ def _is_read(text: str, has_calendar_noun: bool) -> bool:
     return _has_any(text, READ_WORDS) and has_calendar_noun
 
 
+def _is_general_question(text: str) -> bool:
+    """A question or lookup request that nothing else claimed: search the web for it.
+
+    Only used as a last resort, so notes, reminders and calendar commands win first.
+    Questions about the user's own things ("my ...") are not web searches.
+    """
+    stripped = text.strip()
+    if re.search(r"\bmy\b", stripped, re.IGNORECASE):
+        return False
+    return bool(QUESTION_LEAD.match(stripped)) or stripped.endswith("?")
+
+
 def classify(text: str) -> Intent:
     lowered = text.lower()
     has_calendar_noun = _has_any(lowered, CALENDAR_NOUNS)
@@ -170,6 +194,8 @@ def classify(text: str) -> Intent:
         return Intent.CREATE_EVENT
     if has_calendar_noun and _has_when(text):
         return Intent.CREATE_EVENT
+    if _is_general_question(text):
+        return Intent.WEB_SEARCH
     return Intent.UNKNOWN
 
 
