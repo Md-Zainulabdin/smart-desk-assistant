@@ -165,7 +165,7 @@ BARE_HOUR_PATTERN = re.compile(
 _SEARCH_LEAD = re.compile(
     r"^(?:the\s+)?(?:please\s+)?(?:can you\s+)?"
     r"(?:search(?:\s+for)?|look\s+up|google|find(?:\s+out)?|tell\s+me|show\s+me"
-    r"|give\s+me|get\s+me|what(?:'s|\s+is)?|which|any|latest|newest|recent|updates?\s+on)\b\s*",
+    r"|give\s+me|get\s+me|what(?:'s|s|\s+is)?|which|any|latest|newest|recent|updates?\s+on)\b\s*",
     re.IGNORECASE,
 )
 

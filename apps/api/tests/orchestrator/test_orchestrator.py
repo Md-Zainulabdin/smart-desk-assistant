@@ -14,6 +14,7 @@ from app.modules.calendar.schemas import MeetingOut
 from app.modules.notes import repository as notes_repository
 from app.modules.notes.schemas import Note
 from app.modules.orchestrator import repository
+from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import AssistantRequest, Outcome
 from app.modules.orchestrator.service import handle
 
@@ -89,9 +90,102 @@ def test_unsupported_reply_drops_the_pending_question(world):
 
 
 def test_features_not_built_yet_say_so(world):
-    response = say("Remind me to call mom tomorrow at 5 PM")
+    response = say("What meetings do I have tomorrow")
     assert response.outcome is Outcome.UNSUPPORTED
-    assert response.reply == "Reminders isn't available yet."
+    assert response.reply == "Reading your calendar isn't available yet."
+
+
+def test_reminders_are_refused_without_a_follow_up_question(world):
+    response = say("Remind me to call mom")
+
+    assert response.outcome is Outcome.UNSUPPORTED
+    assert response.reply == "Sorry, I can't help with that."
+    assert USER_ID not in world["pending"]
+
+
+def found(results, answer=None):
+    data = {"query": "python news", "results": results}
+    if answer is not None:
+        data["answer"] = answer
+    return {"success": True, "data": data, "error": None}
+
+
+def test_web_search_reply_is_the_top_result_as_plain_speakable_text(world, monkeypatch):
+    results = [
+        {
+            "title": "Weather in Karachi",
+            "url": "https://a",
+            "snippet": "## Today\n**Karachi** is 32 degrees and sunny. See [details](https://x.com/y) "
+            "or https://example.com now. Humidity is 40 percent.",
+        },
+        {"title": "Other", "url": "https://b", "snippet": "b"},
+    ]
+    search = Mock(return_value=found(results))
+    monkeypatch.setattr(orchestrator_service, "search_web", search)
+
+    response = say("Search for python news")
+
+    assert response.outcome is Outcome.DONE
+    assert response.reply == (
+        "Weather in Karachi. Today Karachi is 32 degrees and sunny. See details or now. "
+        "Humidity is 40 percent."
+    )
+    assert response.result["results"] == results
+    assert search.call_args.args[0] == "python news"
+
+
+def test_web_search_reply_prefers_the_written_answer(world, monkeypatch):
+    results = [{"title": "Everest", "url": "https://a", "snippet": "A mountain page."}]
+    answer = "Mount Everest is **8,849 metres** tall, see https://x.com for more."
+    search = Mock(return_value=found(results, answer))
+    monkeypatch.setattr(orchestrator_service, "search_web", search)
+
+    response = say("Search for python news")
+
+    assert response.reply == "Mount Everest is 8,849 metres tall, see for more."
+    assert response.result["answer"] == answer
+    assert search.call_args.kwargs["include_answer"] is True
+
+
+def test_web_search_reply_is_cut_at_a_sentence_and_stays_short(world, monkeypatch):
+    snippet = " ".join(f"Sentence number {i} is here." for i in range(40))
+    results = [{"title": "Long", "url": "https://a", "snippet": snippet}]
+    monkeypatch.setattr(orchestrator_service, "search_web", Mock(return_value=found(results)))
+
+    response = say("Search for python news")
+
+    assert len(response.reply) <= orchestrator_service.SPOKEN_MAX_CHARS
+    assert response.reply.endswith("here.")
+
+
+def test_web_search_result_without_text_falls_back_to_the_title(world, monkeypatch):
+    results = [{"title": "Weather in Karachi", "url": "https://a", "snippet": ""}]
+    monkeypatch.setattr(orchestrator_service, "search_web", Mock(return_value=found(results)))
+
+    response = say("Search for python news")
+
+    assert response.reply == "The top result is Weather in Karachi."
+
+
+def test_web_search_without_results_says_so(world, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "search_web", Mock(return_value=found([])))
+    response = say("Search for python news")
+    assert response.outcome is Outcome.DONE
+    assert response.reply == "I couldn't find anything for python news."
+
+
+def test_web_search_failure_becomes_a_spoken_failure(world, monkeypatch):
+    failed = {
+        "success": False,
+        "data": None,
+        "error": {"code": "SEARCH_FAILED", "message": "Web search could not be completed."},
+    }
+    monkeypatch.setattr(orchestrator_service, "search_web", Mock(return_value=failed))
+
+    response = say("Search for python news")
+
+    assert response.outcome is Outcome.FAILED
+    assert response.reply == "Web search could not be completed."
 
 
 def test_action_errors_become_a_spoken_failure(world):
