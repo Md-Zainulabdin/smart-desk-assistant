@@ -5,7 +5,7 @@ dependencies:
   # Slint UI toolkit (prebuilt, no Rust). Exact pin: slint_build.py downloads the matching compiler.
   slint/slint: "==1.18.1"
 
-  # Wake word "Jarvis" + audio front end (AFE, VAD, noise suppression)
+  # Wake word "Hey Nova" + audio front end (AFE, VAD, noise suppression)
   espressif/esp-sr: "^2.0.0"
 
   # LovyanGFX display driver

@@ -1,4 +1,4 @@
-# Jarvis Voice Assistant: Handoff Summary
+# Nova Voice Assistant: Handoff Summary
 
 Context for continuing this project in Claude Code. Put this file in the project root.
 
@@ -8,15 +8,15 @@ Context for continuing this project in Claude Code. Put this file in the project
 
 A voice assistant on an **ESP32-S3 N16R8** (16 MB flash, 8 MB octal PSRAM):
 
-1. Listen continuously for the wake word **"Jarvis"** (ESP-SR WakeNet `wn9_jarvis_tts`).
+1. Listen continuously for the wake word **"Hey Nova"** (ESP-SR WakeNet `wn10_heynova`).
 2. Play a short greeting through the speaker, then record the spoken command into PSRAM. Recording ends on silence.
 3. Send the WAV to **Groq Whisper** (`whisper-large-v3-turbo`) and get the transcript back.
 4. Show every state on a **1.8" 128×160 ST7735S TFT** with a **Slint** UI.
 4b. Publish the transcript over **MQTT (HiveMQ Cloud, `mqtts://…:8883`)** to a FastAPI backend.
-   Topics: `jarvis/<id>/transcript` (QoS 1, JSON `{"device","id","text","audio_ms"}`) and
-   `jarvis/<id>/status` (retained `online`/`offline`, Last Will). `<id>` = last 3 MAC bytes.
+   Topics: `nova/<id>/transcript` (QoS 1, JSON `{"device","id","text","audio_ms"}`) and
+   `nova/<id>/status` (retained `online`/`offline`, Last Will). `<id>` = last 3 MAC bytes.
    Uses the built-in `esp-mqtt` + cJSON, the TLS CA bundle, and a non-blocking `enqueue`. Credentials are `SEED_MQTT_HOST/USER/PASS` in `secrets.h`.
-4c. **Subscribes** to `jarvis/<id>/reminder` and `jarvis/<id>/response` (QoS 1, `{"text","id"}` or plain text, duplicates dropped by `id`).
+4c. **Subscribes** to `nova/<id>/reminder` and `nova/<id>/response` (QoS 1, `{"text","id"}` or plain text, duplicates dropped by `id`).
    The text is spoken with **Groq TTS** (`canopylabs/orpheus-v1-english`, voice `diana`, same Groq key):
    - The text is split into ≤200-char pieces (the Orpheus limit), cut at sentence ends.
    - `ttsFetchTask` (core 0, prio 3) streams each WAV's PCM into a **1 MB PSRAM stream buffer**.
@@ -79,8 +79,8 @@ PlatformIO uses ESP-IDF's CMake only to configure the build, then compiles with 
 | Firmware state | Screen |
 |---|---|
 | boot | "Starting" / "Loading wake word..." |
-| `ST_IDLE` | Idle, grey orb, "Standby", "Say Jarvis" |
-| `ST_GREETING` | Speaking, green bars, "Jarvis" + the greeting line |
+| `ST_IDLE` | Home (`src/ui/home.slint`): SNTP clock + date (`CLOCK_TZ`), latest reminder card or "Say Hey Nova" hint |
+| `ST_GREETING` | Speaking, green bars, "Nova" + the greeting line |
 | `ST_LISTEN` | Listening, blue orb pulsing with the mic level |
 | `ST_UPLOAD` | Thinking, purple orb + dots, "Transcribing" |
 | success | Idle, "You said" + transcript, 8 s |
@@ -141,7 +141,7 @@ PlatformIO uses ESP-IDF's CMake only to configure the build, then compiles with 
 ### Key `sdkconfig.defaults` choices
 - Octal PSRAM at 80 MHz, malloc from PSRAM, Wi-Fi/LWIP and mbedTLS buffers in PSRAM.
 - 64 KB data cache with 64 B lines (recommended by ESP-SR).
-- `CONFIG_MODEL_IN_FLASH`, `CONFIG_SR_WN_WN9_JARVIS_TTS`, MultiNet set to none.
+- `CONFIG_MODEL_IN_FLASH`, `CONFIG_SR_WN_WN10_HEYNOVA`, MultiNet set to none.
 - Certificate bundle enabled.
 - `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y` with LF line endings (so `DUMP` binary data isn't altered).
 - Main task stack 16 KB, `FREERTOS_HZ=1000`, `-O2`.
@@ -158,13 +158,13 @@ PlatformIO uses ESP-IDF's CMake only to configure the build, then compiles with 
 ```
 <project root>/
 ├─ platformio.ini          env 4d_systems_esp32s3_gen4_r8n16, espidf, extra_scripts pre/post
-├─ CMakeLists.txt          standard IDF project file (project name jarvis-slint-ui)
+├─ CMakeLists.txt          standard IDF project file (project name nova-slint-ui)
 ├─ sdkconfig.defaults      see above (delete sdkconfig.<env> after changing it)
 ├─ partitions.csv          see above
 ├─ slint_build.py          .slint → src/generated/*.h
 ├─ slint_link.py           links libslint_cpp.a
 ├─ models/
-│  ├─ wn9_jarvis_tts/      wn9_data, wn9_index, _MODEL_INFO_
+│  ├─ wn10_heynova/        wn10_data, _MODEL_INFO_ (WakeNet10; copied from ESP-SR wn10_data_p1 / _MODEL_INFO_p1, the ESP32-S3 build)
 │  └─ srmodels.bin         packed model (pack_model.py writes into the -m folder)
 └─ src/
    ├─ CMakeLists.txt       idf_component_register(SRCS "main.cpp" INCLUDE_DIRS ".")
@@ -190,8 +190,8 @@ Committed on purpose: `sdkconfig.defaults` (the real config) and `dependencies.l
 | Slint demo UI (standalone) | Host-tested via stubs; firmware build linked after the two scripts |
 | Integrated firmware | **Builds, flashes and boots** on the board (IDF 5.5.5) |
 | Boot log | mic started, speaker started, PSRAM 7204 KB free, record buffer allocated |
-| ESP-SR model | **Fixed (2026-10-19):** model flashed to 0x610000, AFE loads `wn9_jarvis_tts`; Wi-Fi connects |
-| Wake word | Works: "Jarvis" detected, greeting started, command recorded (peak 18350) |
+| ESP-SR model | **Fixed (2026-10-19):** model flashed to 0x610000, AFE loaded the then-current `wn9_jarvis_tts`; Wi-Fi connects |
+| Wake word | **Changed (2026-11-14):** switched from `wn9_jarvis_tts` to `wn10_heynova` ("Hey Nova"). Needs a hardware re-test. Jarvis had worked: detected, greeting started, command recorded (peak 18350). The old model is in `models_backup\`. WakeNet10 may use more internal RAM than WN9, so recheck `HEAP` |
 | MQTT | Works: TLS to HiveMQ, transcript delivered, reminder/response messages received |
 | Groq STT / TTS | Failed with internal RAM exhaustion (`esp-aes: Failed to allocate`, `Failed to create socket`, 9 KB free). RAM fixes are built (see §3); **not yet flashed/verified** |
 | Speaker | **Silent** for both greeting and TTS, although I2S writes succeed and the greeting data is loud. Suspect wiring/amp. `TONE` added to check |
@@ -205,14 +205,14 @@ Committed on purpose: `sdkconfig.defaults` (the real config) and `dependencies.l
 2. **Speaker:** run `TONE`.
    - No beep: check the MAX98357A wiring: VIN 5 V, common GND, SD not tied to GND, BCLK→16, LRC→17, DIN→15.
    - Beep: the problem is in the audio path.
-3. **End-to-end:** "Jarvis" → command → transcript on `jarvis/<id>/transcript`. Then publish to `jarvis/<id>/reminder` and confirm it's spoken.
+3. **End-to-end:** "Hey Nova" → command → transcript on `nova/<id>/transcript`. Then publish to `nova/<id>/reminder` and confirm it's spoken.
 4. **If mic audio is wrong** (`peak 0`, too quiet, distorted): copy `save_audio.py` from the Arduino project, run `DUMP` and listen. Adjust the `>>16` shift or `MIC_GAIN` in `feedTask`.
 5. **Tune the display** in `LGFX_ST7735S.hpp` (`offset_x/y`, `invert`, `rgb_order`, maybe raise `freq_write` to 27–40 MHz).
 6. **Model partition** (only after erasing flash or changing `partitions.csv`):
    ```
    pio pkg exec -p tool-esptoolpy -- esptool --chip esp32s3 --port COM3 write-flash 0x610000 models\srmodels.bin
    ```
-   To repack: `python managed_components\espressif__esp-sr\model\pack_model.py -m models -o srmodels.bin`. The output lands in `models\`.
+   To repack: `python managed_components\espressif__esp-sr\model\pack_model.py -m models -o srmodels.bin`. The output lands in `models\`. `pack_model.py` packs **every** subfolder of `models\`, so keep only `wn10_heynova\` there.
 7. **Later work:**
    - **Context layer (planned, not built):** LD2410B radar presence + BLE tags for identity in a shared home. Plan: `~/.claude/plans/uptill-now-i-federated-chipmunk.md`.
    - **Python backend (FastAPI):** consumes `transcript`, publishes `reminder`/`response`.

@@ -1,0 +1,18 @@
+# Extra esp-dl Conv kernels needed by the ESP-SR wake model wn10_heynova (ESP32-S3).
+#
+# esp-dl compiles only the kernels listed in registered compile_req files.
+# ESP-SR's own list (managed_components/espressif__esp-sr/tool/esp-sr-req.yml)
+# was generated from its test WN10 models and has only the *with-bias* w8a16
+# 1x1 kernel for esp32s3. wn10_heynova also uses a w8a16 1x1 Conv WITHOUT bias,
+# so without this file the log shows "Conv: no Conv kernel for packed key 0x0202"
+# (w8a16, 1x1, no bias, linear, channel-aligned) and wake detection fails.
+#
+# Registered from src/CMakeLists.txt. esp-dl merges it with ESP-SR's list.
+kernel_abi: 1
+
+ops:
+  - Conv
+
+kernels:
+  - dl_tie728_w8a16_conv2d_11cn            # key 0x0202: channel-aligned
+  - dl_tie728_w8a16_unaligned_conv2d_11cn  # same, for channels not a multiple of 8

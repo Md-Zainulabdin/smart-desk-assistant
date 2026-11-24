@@ -1,8 +1,8 @@
-# Jarvis voice assistant (ESP32-S3 + ESP-IDF + Slint)
+# Nova voice assistant (ESP32-S3 + ESP-IDF + Slint)
 
 A voice assistant on an ESP32-S3 N16R8 with a 1.8" ST7735S screen:
 
-1. It listens for the wake word **"Jarvis"** (ESP-SR WakeNet) and plays a greeting.
+1. It listens for the wake word **"Hey Nova"** (ESP-SR WakeNet) and plays a greeting.
 2. It records your command and transcribes it with **Groq Whisper**.
 3. It publishes the transcript over **MQTT** (HiveMQ Cloud, TLS).
 4. It reads out reminders and replies from the backend with **Groq TTS** (Orpheus, voice "diana").
@@ -18,7 +18,7 @@ For design decisions, current status and gotchas, see [HANDOFF.md](HANDOFF.md).
 | ST7735S TFT (SPI) | SCLK 12, MOSI 11, DC 9, CS 10, RST 8, BL 7 |
 | INMP441 mic (I2S0) | SD 4, SCK 5, WS 6, L/R → GND |
 | MAX98357A amp (I2S1) | BCLK 16, LRC 17, DIN 15, VIN 5 V |
-| BOOT button | GPIO 0: hold to record, press to stop a reminder |
+| BOOT button | GPIO 0: hold to record, press to stop a reminder, press on Home to dismiss the reminder card |
 
 The console is the **native USB** port (USB-Serial/JTAG).
 
@@ -42,7 +42,8 @@ The console is the **native USB** port (USB-Serial/JTAG).
    ```
    pio pkg exec -p tool-esptoolpy -- esptool --chip esp32s3 --port COM3 write-flash 0x610000 models\srmodels.bin
    ```
-4. Watch the log with `pio device monitor`. You should see `[sr] wake model: wn9_jarvis_tts` and `[mqtt] connected`.
+   The wake word is "Hey Nova", using the WakeNet10 model `wn10_heynova`. `models\wn10_heynova\` holds ESP-SR's ESP32-S3 build: `wn10_data_p1` renamed to `wn10_data` and `_MODEL_INFO_p1` renamed to `_MODEL_INFO_`. To repack, run `python managed_components\espressif__esp-sr\model\pack_model.py -m models -o srmodels.bin`. Keep only that one model folder in `models\`, because the script packs every subfolder.
+4. Watch the log with `pio device monitor`. You should see `[sr] wake model: wn10_heynova` and `[mqtt] connected`.
 
 ## MQTT topics
 
@@ -50,10 +51,10 @@ The console is the **native USB** port (USB-Serial/JTAG).
 
 | Topic | Direction | Payload |
 |---|---|---|
-| `jarvis/<id>/transcript` | device → backend | `{"device","id","text","audio_ms"}` (QoS 1) |
-| `jarvis/<id>/status` | device → backend | retained `online` / `offline` (Last Will) |
-| `jarvis/<id>/reminder` | backend → device | `{"text","id"}` or plain text, spoken as "Reminder" |
-| `jarvis/<id>/response` | backend → device | same, spoken as "Jarvis" |
+| `nova/<id>/transcript` | device → backend | `{"device","id","text","audio_ms"}` (QoS 1) |
+| `nova/<id>/status` | device → backend | retained `online` / `offline` (Last Will) |
+| `nova/<id>/reminder` | backend → device | `{"text","id"}` or plain text, spoken as "Reminder" |
+| `nova/<id>/response` | backend → device | same, spoken as "Nova" |
 
 ## Serial commands
 
