@@ -15,5 +15,11 @@ services:
       interval: 5s
       retries: 10
 
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # Exposes the web GUI at http://localhost:8080
+
 volumes:
   smartdesk-pgdata:
