@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,9 +10,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.db import pool, run_migrations
+from app.jobs.mqtt_bridge import start_bridge, stop_bridge
 from app.modules.auth.router import router as auth_router
 from app.modules.calendar.router import router as calendar_router
 from app.modules.command.router import router as command_router
+from app.modules.device.router import router as device_router
 from app.modules.notes.router import router as notes_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.web_search.routes import router as web_search_router
@@ -20,11 +23,25 @@ from app.routers.health import router as health_router
 PLAYGROUND_DIR = Path(__file__).resolve().parent.parent / "playground"
 
 
+def _configure_app_logging() -> None:
+    """Show this app's INFO logs (e.g. MQTT connect) next to uvicorn's; libraries stay quiet."""
+    app_logger = logging.getLogger("app")
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        app_logger.addHandler(handler)
+        app_logger.setLevel(logging.INFO)
+        app_logger.propagate = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _configure_app_logging()
     run_migrations()
     pool.open()
+    start_bridge()  # no-op when MQTT_HOST is empty
     yield
+    stop_bridge()
     pool.close()
 
 
@@ -56,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(notes_router)
     app.include_router(calendar_router)
     app.include_router(orchestrator_router)
+    app.include_router(device_router)
     app.include_router(web_search_router)
 
     # Dev-only test page at "/". Mounted last so every API route above wins.

@@ -31,5 +31,13 @@ class Settings(BaseSettings):
     pwa_origin: str = "http://localhost:3000"
     api_base_url: str = "http://localhost:8000"
 
+    # MQTT bridge to Nova devices. Empty host means the bridge does not start.
+    mqtt_host: str = ""
+    mqtt_port: int = 8883
+    mqtt_username: str = ""
+    mqtt_password: str = ""
+    mqtt_topic_root: str = "nova"
+    mqtt_client_id: str = "desk-api"
+
 
 settings = Settings()
